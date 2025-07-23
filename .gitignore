@@ -8,10 +8,12 @@
 *.app
 *.elf
 
+
 # Static and shared libraries
 *.a
 *.so
 *.dylib
+.idea
 
 # Build directories (CMake)
 build/
