@@ -6,10 +6,12 @@ set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Add compile options globally
-add_compile_options(-std=c89 -pedantic -Wall -fsanitize=undefined -g)
+add_compile_options(-std=c89 -ansi -pedantic -Wall)
 
 # Include directories (if needed)
 include_directories(${CMAKE_SOURCE_DIR})
 
 # Define the executable
-add_executable(untitled1 main.c)
+add_executable(untitled1 assembler.c
+        assembler_types.c
+        assembler_types.h)
