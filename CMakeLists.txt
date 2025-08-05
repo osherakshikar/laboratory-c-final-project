@@ -12,6 +12,8 @@ add_compile_options(-std=c89 -ansi -pedantic -Wall)
 include_directories(${CMAKE_SOURCE_DIR})
 
 # Define the executable
-add_executable(untitled1 assembler.c
-        assembler_types.c
-        assembler_types.h)
+add_executable(untitled1 src/assembler.c
+        src/assembler_types.c
+        include/assembler_types.h
+        src/line_parser.c
+        include/line_parser.h)
