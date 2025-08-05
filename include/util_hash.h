@@ -2,6 +2,9 @@
 #define UTIL_HASH_H
 #include <stddef.h>
 
+#define HASH_STARTING_VAL 5381
+#define FIVE 5
+
 typedef struct {
     char *key;
     void *value;
@@ -9,7 +12,7 @@ typedef struct {
 } hash_entry_t;
 
 typedef struct {
-    size_t cap, size;
+    size_t capacity, size;
     hash_entry_t *tbl;
 } hash_table_t;
 
