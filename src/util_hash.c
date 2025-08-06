@@ -60,7 +60,7 @@ hash_table_t *hash_create(size_t pow2_cap) {
     ht = malloc(sizeof(hash_table_t));
     if (!ht) {
         printf("Error: Could not allocate memory for hash table\n");
-        return NULL; /* COME BACK LATER ------------------------------------*/
+        return NULL;
     }
 
     if (pow2_cap < 4) pow2_cap = INITIAL_CAPACITY;
@@ -75,7 +75,7 @@ hash_table_t *hash_create(size_t pow2_cap) {
     if (!ht->tbl) {
         free(ht);
         printf("Error: Could not allocate memory for hash table entries\n");
-        return NULL; /* COME BACK LATER ------------------------------------*/
+        return NULL;
     }
     return ht;
 }
