@@ -24,7 +24,7 @@ static unsigned long djb2(const char *str) {
     int c;
 
     while ((c = (unsigned char) *str++))
-        hash = ((hash << FIVE) + hash) + c; /* hash * 33(shift left 5 + 5381) + c */
+        hash = ((hash << DJ_SHIFT) + hash) + c; /* hash * 33(shift left 5 + 5381) + c */
     return hash;
 }
 

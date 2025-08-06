@@ -10,7 +10,7 @@
  */
 
 #define HASH_STARTING_VAL 5381 /* The initial value for the hash function, commonly used in djb2 */
-#define FIVE 5 /* The number of bits to shift left in the hash function */
+#define DJ_SHIFT 5 /* The number of bits to shift left in the hash function */
 #define INITIAL_CAPACITY 32 /* The initial capacity of the hash table */
 
 /**
@@ -56,6 +56,7 @@ void hash_destroy(hash_table_t *, void (*destroy_val)(void *));
 /**
  * Puts a key-value pair into the hash table.
  * If the key already exists, it updates the value.
+ * Old value is not freed, caller is responsible.
  *
  * @param hash_table Pointer to the hash table
  * @param key The key to insert or update
