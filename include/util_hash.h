@@ -1,28 +1,94 @@
 #ifndef UTIL_HASH_H
 #define UTIL_HASH_H
 #include <stddef.h>
+/*
+ * =====================================================================================
+ * Filename: util_hash.h
+ * Description: Header file for a generic hash table implementation using the djb2 hash
+ * function and collision resolution with the Chaining method.
+ * =====================================================================================
+ */
 
-#define HASH_STARTING_VAL 5381
-#define FIVE 5
+#define HASH_STARTING_VAL 5381 /* The initial value for the hash function, commonly used in djb2 */
+#define FIVE 5 /* The number of bits to shift left in the hash function */
+#define INITIAL_CAPACITY 32 /* The initial capacity of the hash table */
 
-typedef struct {
+/**
+ * A hash entry structure that represents a key-value pair in the hash table.
+ * It contains a key, a value, and a pointer to the next entry for chaining in case of collisions.
+ */
+typedef struct hash_entry_t {
     char *key;
     void *value;
-    int state; /* 0=empty, 1=full, -1=deleted */
+    struct hash_entry_t *next; /* for chaining */
 } hash_entry_t;
 
+/**
+ * A hash table structure that uses chaining for collision resolution.
+ * It contains an array of pointers to hash_entry_t, which represent the entries in the table.
+ * Each entry contains a key-value pair and a pointer to the next entry in case of a collision.
+ */
 typedef struct {
-    size_t capacity, size;
-    hash_entry_t *tbl;
+    size_t capacity;
+    size_t size;
+    hash_entry_t **tbl;
 } hash_table_t;
+
+/**
+ * Creates a new hash table with the specified capacity.
+ * The capacity should be a power of 2.
+ *
+ * @param pow2_cap The initial capacity of the hash table, should be a power of 2
+ * @return Pointer to the newly created hash table, or NULL if memory allocation fails
+ */
 
 hash_table_t *hash_create(size_t pow2_cap);
 
+/**
+ * Destroys the hash table and frees all allocated memory.
+ * If destroy_val is not NULL, it will be called for each value in the hash table.
+ *
+ * @param hash_table Pointer to the hash table to destroy
+ * @param destroy_val Function pointer to a function that destroys the value, can be NULL
+ */
 void hash_destroy(hash_table_t *, void (*destroy_val)(void *));
 
+/**
+ * Puts a key-value pair into the hash table.
+ * If the key already exists, it updates the value.
+ *
+ * @param hash_table Pointer to the hash table
+ * @param key The key to insert or update
+ * @param value The value associated with the key
+ * @return 0 on success, -1 on failure
+ */
 int hash_put(hash_table_t *, const char *, void *);
 
+/**
+ * Gets the value associated with a key in the hash table.
+ *
+ * @param hash_table Pointer to the hash table
+ * @param key The key to look up
+ * @return Pointer to the value associated with the key, or NULL if not found
+ */
 void *hash_get(const hash_table_t *, const char *);
 
+/**
+ * Removes a key-value pair from the hash table.
+ * If destroy_val is not NULL, it will be called for the value before removing it.
+ *
+ * @param hash_table Pointer to the hash table
+ * @param key The key to remove
+ * @param destroy_val Function pointer to a function that destroys the value, can be NULL
+ * @return 0 on success, -1 on failure
+ */
 int hash_remove(hash_table_t *, const char *, void (*destroy_val)(void *));
+
+/**
+ * Computes the size of the hash table.
+ *
+ * @param ht Pointer to the hash table
+ * @return The number of entries in the hash table
+ */
+size_t hash_size(const hash_table_t *ht);
 #endif
