@@ -2,12 +2,6 @@
 #define MACRO_H
 
 #include "util_vec.h"
-#include "util_hash.h"
-#include "globals.h"
-#include <stddef.h>
-
-#define mcro "mcro"  /* Macro start */
-#define mcrend "mcrend"
 
 /*
  * =====================================================================================
@@ -17,6 +11,8 @@
  * =====================================================================================
  */
 
+#define mcro "mcro"  /* Macro start */
+#define mcrend "mcrend"
 /**
  * @struct macro_t
  * @brief Represents a single macro definition.
@@ -26,6 +22,13 @@ typedef struct {
     vec_t body;     /* A dynamic vector (vec_t) to store the lines (char*) of the macro's body */
 } macro_t;
 
-
+/**
+ * @brief Creates a new macro object.
+ *
+ * Allocates memory for a macro_t structure and initializes its fields.
+ *
+ * @param name The name of the macro.
+ * @return A pointer to the newly created macro_t object, or NULL on failure.
+ */
 int preprocess_file(const char *input_path, const char *output_path);
 #endif /* MACRO_H */
