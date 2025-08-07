@@ -39,18 +39,18 @@ add_executable(test_hash
 # Line parser test
 add_executable(test_parser
         tests/parser_test.c
-        src/line_parser.c
-        src/assembler_types.c
-        src/util_hash.c)  # If parser depends on hash
-
-# Assembler types test
-add_executable(test_types
-        tests/types_test.c
-        src/assembler_types.c)
+        src/line_parser.c)
 
 # Vector utility test
 add_executable(test_vec
         tests/vector_test.c
+        src/util_vec.c)
+
+# Preprocessor test
+add_executable(test_preprocessor
+        tests/preprocessor_test.c
+        src/preprocessor.c
+        src/util_hash.c
         src/util_vec.c)
 
 # ---------------------------------------------------------------------------
