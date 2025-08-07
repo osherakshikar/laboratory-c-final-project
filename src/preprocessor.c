@@ -29,7 +29,7 @@ static bool_t is_reserved_keyword(const char* name) {
         "jmp", "bne", "red", "prn", "jsr", "rts", "stop",
         "data", "string", "mat", "entry", "extern",
         "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-        "mcro", "endmcro",
+        "mcro", "mcrend",
         NULL /* Sentinel to mark the end of the array */
     };
     for (i = 0; reserved_keywords[i] != NULL; i++) {
@@ -96,8 +96,8 @@ static int add_line_to_macro(macro_t* m, const char* line) {
 
 int preprocess_file(const char *input_path, const char *output_path) {
     FILE *as_file, *am_file;
-    char line[MAX_LINE_LENGTH ];
-    char line_copy[MAX_LINE_LENGTH ];
+    char line[MAX_LINE_LENGTH];
+    char line_copy[MAX_LINE_LENGTH];
     int line_num = 0;
     bool_t success = TRUE;
 
@@ -167,6 +167,7 @@ int preprocess_file(const char *input_path, const char *output_path) {
 
             current_macro = create_macro(macro_name);
             hash_put(macro_table, macro_name, current_macro);
+
         } else if (strcmp(token, mcrend) == 0) {
             if (strtok(NULL, " \t\n\r") != NULL) {
                 printf("Error line %d: Token found after 'mcrend'.\n", line_num);
@@ -174,8 +175,10 @@ int preprocess_file(const char *input_path, const char *output_path) {
             }
             in_macro_definition = FALSE;
             current_macro = NULL;
+
         } else if (in_macro_definition) {
             add_line_to_macro(current_macro, line);
+
         } else {
             /* Not in a macro definition, check for macro call */
             macro_to_expand = hash_get(macro_table, token);
@@ -184,6 +187,7 @@ int preprocess_file(const char *input_path, const char *output_path) {
                     char *macro_line = *(char **) vec_get(&macro_to_expand->body, i); /* Get the line from the macro body */
                     fputs(macro_line, am_file);
                 }
+
             } else {
                 /* Regular line, write to output */
                 fputs(line, am_file);
