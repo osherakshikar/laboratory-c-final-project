@@ -4,8 +4,6 @@
 
 /* Include the header for the function we are testing */
 #include "../include/macro.h"
-/* We also need the type definitions */
-#include "../include/globals.h"
 
 /* --- Test Runner Helper Functions --- */
 
@@ -94,7 +92,7 @@ int main() {
     /* Test Case 1: Simple macro expansion */
     run_test(
         "Simple Expansion",
-        "mcro my_inc\ninc r1\nendmcro\nmy_inc\n",
+        "mcro my_inc\ninc r1\nmcrend\nmy_inc\n",
         "inc r1\n",
         0
     );
@@ -110,7 +108,7 @@ int main() {
     /* Test Case 3: Error - macro name is a reserved word */
     run_test(
         "Reserved Word Error",
-        "mcro mov\nsub r1, r1\nendmcro\n",
+        "mcro mov\nsub r1, r1\nmcrend\n",
         NULL, /* We don't expect any output */
         -1    /* We expect the function to fail */
     );
@@ -118,16 +116,54 @@ int main() {
     /* Test Case 4: Error - extraneous text after mcro definition */
     run_test(
         "Extraneous text after mcro",
-        "mcro my_macro some_junk\ninc r1\nendmcro\n",
+        "mcro my_macro some_junk\ninc r1\nmcrend\n",
         NULL,
         -1
     );
 
-    /* Test Case 5: Multiple macros and comments */
+    /* Test Case 5: Multiple macros and comments (FIXED) */
+    /* The preprocessor should preserve empty lines outside of macro definitions. */
     run_test(
         "Multiple Macros and Comments",
-        "; This is a test file\n\nmcro setup\nmov #1, r1\nendmcro\n\nmcro teardown\nmov #0, r1\nendmcro\n\nsetup\n; some action\nteardown\n",
-        "; This is a test file\n\nmov #1, r1\n; some action\nmov #0, r1\n",
+        "; This is a test file\n\nmcro setup\nmov #1, r1\nmcrend\n\nmcro teardown\nmov #0, r1\nmcrend\n\nsetup\n; some action\nteardown\n",
+        "; This is a test file\n\n\n\nmov #1, r1\n; some action\nmov #0, r1\n",
+        0
+    );
+
+    /* Test Case 6: Complex file from project description (FIXED) */
+    run_test(
+        "Complex Project File",
+        /* Input string */
+        "MAIN:      	mov   M1[r2][r7], LENGTH\n"
+        "add r2, STR\n"
+        "LOOP:    	jmp   END\n"
+        "prn #-5\n"
+        "mcro a_mc\n"
+        "mov  M1[r3][r3], r3\n"
+        "bne  LOOP\n"
+        "mcrend\n"
+        "sub r1, r4\n"
+        "inc K\n"
+        "a_mc\n"
+        "END: stop\n"
+        "STR: .string \"abcdef\"\n"
+        "LENGTH: .data 6, -9, 15\n"
+        "K: .data 22\n"
+        "M1:      		.mat [2][2] 1, 2, 3, 4\n",
+        /* Expected output string */
+        "MAIN:      	mov   M1[r2][r7], LENGTH\n"
+        "add r2, STR\n"
+        "LOOP:    	jmp   END\n"
+        "prn #-5\n"
+        "sub r1, r4\n"
+        "inc K\n"
+        "mov  M1[r3][r3], r3\n"
+        "bne  LOOP\n"
+        "END: stop\n"
+        "STR: .string \"abcdef\"\n"
+        "LENGTH: .data 6, -9, 15\n"
+        "K: .data 22\n"
+        "M1:      		.mat [2][2] 1, 2, 3, 4\n",
         0
     );
 
