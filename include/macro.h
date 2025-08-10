@@ -23,12 +23,11 @@ typedef struct {
 } macro_t;
 
 /**
- * @brief Creates a new macro object.
+ * @brief Preprocesses an assembly-like file, expanding macros and writing the result to an output file.
  *
- * Allocates memory for a macro_t structure and initializes its fields.
- *
- * @param name The name of the macro.
- * @return A pointer to the newly created macro_t object, or NULL on failure.
+ * @param input_path The path to the input file containing macro definitions.
+ * @param output_path The path to the output file where the processed content will be written.
+ * @return int Returns 0 on success, or -1 on failure.
  */
 int preprocess_file(const char *input_path, const char *output_path);
 #endif /* MACRO_H */
