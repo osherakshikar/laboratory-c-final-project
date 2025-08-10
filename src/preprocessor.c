@@ -27,7 +27,7 @@ static bool_t is_reserved_keyword(const char* name) {
     const char* reserved_keywords[] = {
         "mov", "cmp", "add", "sub", "not", "clr", "lea", "inc", "dec",
         "jmp", "bne", "red", "prn", "jsr", "rts", "stop",
-        "data", "string", "mat", "entry", "extern",
+        ".data", ".string", ".mat", ".entry", ".extern",
         "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
         "mcro", "mcrend",
         NULL /* Sentinel to mark the end of the array */
@@ -138,12 +138,14 @@ int preprocess_file(const char *input_path, const char *output_path) {
 
         token = strtok(line_copy, " \t\n\r");
         if (!token) {
-            /* Empty or whitespace-only line */
-            if (!in_macro_definition) {
+            if (in_macro_definition) {
+                add_line_to_macro(current_macro, line);
+            } else {
                 fputs(line, am_file);
             }
             continue;
         }
+
         /* Check for macro definition or end */
         if (strcmp(token, mcro) == 0) {
             in_macro_definition = TRUE;
