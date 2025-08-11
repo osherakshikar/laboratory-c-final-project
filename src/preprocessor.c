@@ -67,8 +67,8 @@ static void destroy_macro(void* m) {
 
     /* Free each line stored in the body vector */
     for (i = 0; i < macro->body.len; i++) {
-        char* line = *(char**)vec_get(&macro->body, i);
-        free(line);
+        char* macro_line = *(char**)vec_get(&macro->body, i);
+        free(macro_line);
     }
 
     vec_destroy(&macro->body);
