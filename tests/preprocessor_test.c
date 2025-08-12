@@ -8,8 +8,8 @@
 /* --- Test Runner Helper Functions --- */
 
 /* Helper function to create a temporary file with specific content */
-void create_test_file(const char* filename, const char* content) {
-    FILE* fp = fopen(filename, "w");
+void create_test_file(const char *filename, const char *content) {
+    FILE *fp = fopen(filename, "w");
     if (fp) {
         fputs(content, fp);
         fclose(fp);
@@ -17,9 +17,9 @@ void create_test_file(const char* filename, const char* content) {
 }
 
 /* Helper function to read the content of a file into a string */
-char* read_file_content(const char* filename) {
-    FILE* fp = fopen(filename, "r");
-    char* content = NULL;
+char *read_file_content(const char *filename) {
+    FILE *fp = fopen(filename, "r");
+    char *content = NULL;
     long length;
 
     if (fp) {
@@ -38,11 +38,11 @@ char* read_file_content(const char* filename) {
 }
 
 /* The main test runner function */
-void run_test(const char* test_name, const char* input_content, const char* expected_output, int expected_return) {
-    const char* input_filename = "test_input.as";
-    const char* output_filename = "test_output.am";
+void run_test(const char *test_name, const char *input_content, const char *expected_output, int expected_return) {
+    const char *input_filename = "test_input.as";
+    const char *output_filename = "test_output.am";
     int return_value;
-    char* actual_output;
+    char *actual_output;
 
     printf("Running test: %s... ", test_name);
 
@@ -56,7 +56,8 @@ void run_test(const char* test_name, const char* input_content, const char* expe
     if (return_value != expected_return) {
         printf("FAIL (Expected return %d, got %d)\n", expected_return, return_value);
     } else {
-        if (expected_return == 0) { /* Success case */
+        if (expected_return == 0) {
+            /* Success case */
             actual_output = read_file_content(output_filename);
             if (actual_output && strcmp(actual_output, expected_output) == 0) {
                 printf("PASS\n");
@@ -66,9 +67,10 @@ void run_test(const char* test_name, const char* input_content, const char* expe
                 printf("Got:\n---\n%s\n---\n", actual_output ? actual_output : "NULL");
             }
             free(actual_output);
-        } else { /* Error case */
+        } else {
+            /* Error case */
             /* Check that the output file was not created (or was removed) */
-            FILE* fp = fopen(output_filename, "r");
+            FILE *fp = fopen(output_filename, "r");
             if (fp) {
                 fclose(fp);
                 printf("FAIL (Output file was created on error)\n");
@@ -110,7 +112,7 @@ int main() {
         "Reserved Word Error",
         "mcro mov\nsub r1, r1\nmcrend\n",
         NULL, /* We don't expect any output */
-        -1    /* We expect the function to fail */
+        -1 /* We expect the function to fail */
     );
 
     /* Test Case 4: Error - extraneous text after mcro definition */
@@ -145,6 +147,7 @@ int main() {
         "sub r1, r4\n"
         "inc K\n"
         "a_mc\n"
+        "a_mc\n"
         "END: stop\n"
         "STR: .string \"abcdef\"\n"
         "LENGTH: .data 6, -9, 15\n"
@@ -157,6 +160,8 @@ int main() {
         "prn #-5\n"
         "sub r1, r4\n"
         "inc K\n"
+        "mov  M1[r3][r3], r3\n"
+        "bne  LOOP\n"
         "mov  M1[r3][r3], r3\n"
         "bne  LOOP\n"
         "END: stop\n"
