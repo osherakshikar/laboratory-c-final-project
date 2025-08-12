@@ -168,7 +168,7 @@ static int parse_matrix_access_token(const char *tok, operand_t *out_op) {
     row_reg = content_start[1] - '0';
 
     error = extract_bracket_content(bracket_end, &content_start, &bracket_end);
-    if (error != ERROR_OK) return error; /* error code from extract_bracket */
+    if (error != ERROR_OK) return -(int) error; /* error code from extract_bracket */
     if (bracket_end - content_start != 2) return -ERROR_INVALID_REGISTER;
 
     if (content_start[0] != 'r' || !isdigit((unsigned char) content_start[1]) || content_start[2] != ']')
@@ -213,7 +213,7 @@ static error_code_t parse_operand_token(const char *tok, operand_t *out_op) {
 
     /* matrix access */
     matrix_status = parse_matrix_access_token(tok, out_op);
-    if (matrix_status < 0) return (error_code_t) (matrix_status);
+    if (matrix_status < 0) return (error_code_t) (-matrix_status);
     if (matrix_status == 1) return ERROR_OK;
 
     /* plain label */
