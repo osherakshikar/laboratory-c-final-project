@@ -14,6 +14,9 @@
  * =====================================================================================
  */
 
+ /* move cmp sub add lea, 2 oparand
+  * clr not inc dec jmp bne jsr red prn , 1 operand
+  * rts stop, 0 operand */
 
 typedef enum {
     MOV_OP, CMP_OP, ADD_OP, SUB_OP, LEA_OP, CLR_OP, NOT_OP, INC_OP,
@@ -52,7 +55,7 @@ typedef struct {
 typedef struct {
     int rows; /* 1..MAX_MATRIX_ROWS  */
     int cols; /* 1..MAX_MATRIX_COLS  */
-    int cells[MAX_MATRIX_CELLS]; /* row-major; count = rows*cols */
+    int cells[MAX_MATRIX_CELLS]; /*  */
 } matrix_def_t;
 
 typedef struct {
@@ -75,7 +78,7 @@ typedef struct {
         struct {
             directive_t type; /* .data / .string / .mat / .entry / .extern */
             union {
-                int_array_t data; /* for .data/.mat directive */
+                int_array_t data; /* for .data directive */
                 char string_val[MAX_STRING_LEN]; /* for .string directive */
                 matrix_def_t mat; /* for .mat directive */
                 char symbol_name[MAX_LABEL_LENGTH]; /* for .entry and .extern directives */
