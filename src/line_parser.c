@@ -1,32 +1,55 @@
 #include "../include/line_parser.h"
-
 #include <ctype.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-/* ANSI C (C89/C90) code */
-/* ========= whitespace & comment helpers ========= */
 
+/*
+ * =====================================================================================
+ * Filename:  line_parser.c
+ * Description: Parses a single line of assembly code, extracting labels, directives,
+ * and operations with their operands. It handles whitespace, comments, and various
+ * syntax rules for labels, directives, and instructions.
+ * This module provides function to parse line, identify errors, and return structured
+ * data representing the parsed line.
+ * =====================================================================================
+ */
+
+
+/* --- Private Helper Functions --- */
+
+/* -- whitespace & comment helpers -- */
+
+/* Remove comment from semicolon to end of line (if exists).
+ * Modifies the line in place.
+ */
 static void remove_comment_from_semicolon(char *line) {
     char *semicolon = strchr(line, ';');
     if (semicolon) *semicolon = '\0';
 }
 
+/* Skip leading whitespace characters in a string.
+ * Returns a pointer to the first non-whitespace character.
+ */
 static char *skip_leading_whitespace(char *p) {
     while (*p && isspace((unsigned char) p[0])) p++;
     return p;
 }
 
+/* Trim trailing whitespace in place.
+ * Modifies the string to remove trailing spaces, tabs, and newlines.
+ */
 static void trim_trailing_whitespace_inplace(char *p) {
     char *end = p + strlen(p);
     while (end > p && isspace((unsigned char) end[-1])) end--;
     *end = '\0';
 }
 
-/* ========= identifier & small utilities ========= */
+/* -- identifier & small utilities -- */
 
-
-/* Return next token delimited by whitespace; advances *cursor to next position. */
+/* Return next whitespace delimited token; advances *cursor to next char.
+ * If no token found, returns NULL and cursor points to end of string.
+ * The token is null-terminated in place, so the caller can modify it.
+ */
 static char *next_whitespace_delimited_token(char **cursor) {
     char *scan = *cursor; /* scan points to the current position in the string */
     char *whitespace_pos; /* position of the next whitespace character */
@@ -37,7 +60,7 @@ static char *next_whitespace_delimited_token(char **cursor) {
         return NULL;
     }
 
-    whitespace_pos = strpbrk(scan, " \t\n");
+    whitespace_pos = strpbrk(scan, " \t\n\r");
     if (whitespace_pos) {
         *whitespace_pos = '\0';
         *cursor = whitespace_pos + 1;
@@ -47,10 +70,13 @@ static char *next_whitespace_delimited_token(char **cursor) {
     return scan;
 }
 
-/* Return next comma-separated piece (trimmed); advances *cursor to next char. */
+/* Return next comm separated piece (trimmed) advances *cursor to next char.
+ * If no piece found, returns NULL and cursor points to end of string
+ * The piece is null terminated in place, so the caller can modify it.
+ */
 static char *next_comma_separated_piece(char **cursor) {
     char *start, *comma;
-    if (!cursor || !*cursor) return NULL;
+    if (!*cursor) return NULL;
 
     start = skip_leading_whitespace(*cursor);
     if (!*start) {
@@ -70,15 +96,18 @@ static char *next_comma_separated_piece(char **cursor) {
     return start;
 }
 
-/* Helper to extract and validate content between brackets */
+/* Extract content between brackets [ ].
+ * Returns ERROR_OK on success, or an error code on failure.
+ * Sets content_start to the start of the content and bracket_end to the end of the closing bracket.
+ */
 static error_code_t extract_bracket_content(const char *start, char **content_start, char **bracket_end) {
-    char *open_bracket, *close_bracket, *p;
+    char *open_bracket, *close_bracket;
 
     open_bracket = strchr(start, '[');
-    if (!open_bracket) return ERROR_ILLEGAL_MATRIX_SYNTAX;
+    if (!open_bracket) return ERROR_INVALID_ADDRESSING_MODE;
 
     close_bracket = strchr(open_bracket + 1, ']');
-    if (!close_bracket) return ERROR_ILLEGAL_MATRIX_SYNTAX;
+    if (!close_bracket) return ERROR_INVALID_ADDRESSING_MODE;
 
     /* Check if content is non-empty */
     if (close_bracket == open_bracket + 1)
@@ -89,9 +118,9 @@ static error_code_t extract_bracket_content(const char *start, char **content_st
     return ERROR_OK;
 }
 
-/* ========= registers & operands ========= */
+/* -- registers & operands -- */
 
-/* r0..r7 => 0..7; -1 not a register; -2 looks like rX but invalid (e.g., r8) */
+/* Parse register token (r0..r7 or r8..r9). Returns 0..7 for r0..r7, -2 for r8/r9, -1 if not register. */
 static int parse_register_token(const char *tok) {
     if (!tok) return -1;
     if (tok[0] == 'r' && tok[1] >= '0' && tok[1] <= '7' && tok[2] == '\0') return tok[1] - '0';
@@ -99,18 +128,23 @@ static int parse_register_token(const char *tok) {
     return -1;
 }
 
-/* "#" immediate. Returns 1 on success, 0 not immediate, negative on format error. */
+/* Parse immediate token . Returns 1 on success, 0 if not immediate, negative on error.
+ * Sets out_value to the parsed integer value.
+ */
 static int parse_immediate_token(const char *tok, int *out_value) {
     char *endptr;
     int val;
     if (!tok || tok[0] != '#') return 0;
     val = (int) strtol(tok + 1, &endptr, 10);
-    if (*endptr != '\0') return ERROR_INVALID_NUMBER_FORMAT;
+    if (*endptr != '\0') return -ERROR_INVALID_NUMBER_FORMAT;
     *out_value = val;
     return 1;
 }
 
-/* LABEL[rX][rY] (compact, no spaces). Returns 1 ok, 0 not matrix, negative on error. */
+/* Parse matrix access token [base_label][rX][rY].
+ * Returns 1 on success, native on error, 0 if not a matrix access.
+ * Sets out_op to the parsed operand with mode MATRIX_ACCESS.
+ */
 static int parse_matrix_access_token(const char *tok, operand_t *out_op) {
     char *content_start, *bracket_end;
     error_code_t error;
@@ -118,11 +152,13 @@ static int parse_matrix_access_token(const char *tok, operand_t *out_op) {
     int row_reg, col_reg;
 
     error = extract_bracket_content(tok, &content_start, &bracket_end);
+    if (error == ERROR_INVALID_ADDRESSING_MODE) return 0;
+    if (error != ERROR_OK) return -(int) error; /* error code from extract_bracket */
+    if (bracket_end - content_start != 2) return -ERROR_INVALID_REGISTER;
 
-    if (error != ERROR_OK) return error; /* error code from extract_bracket */
 
     /* copy base label */
-    base_len = (int) (content_start - tok - 2);
+    base_len = (int) (content_start - tok - 1);
     if (base_len == 0 || base_len >= MAX_LABEL_LENGTH) return -ERROR_INVALID_LABEL;
     memcpy(out_op->value.label, tok, base_len);
     out_op->value.label[base_len] = '\0';
@@ -132,8 +168,9 @@ static int parse_matrix_access_token(const char *tok, operand_t *out_op) {
     row_reg = content_start[1] - '0';
 
     error = extract_bracket_content(bracket_end, &content_start, &bracket_end);
-
     if (error != ERROR_OK) return error; /* error code from extract_bracket */
+    if (bracket_end - content_start != 2) return -ERROR_INVALID_REGISTER;
+
     if (content_start[0] != 'r' || !isdigit((unsigned char) content_start[1]) || content_start[2] != ']')
         return -ERROR_INVALID_REGISTER; /* must be [rX][rY] */
     col_reg = content_start[1] - '0';
@@ -146,7 +183,10 @@ static int parse_matrix_access_token(const char *tok, operand_t *out_op) {
     return 1;
 }
 
-/* Parse any single operand token into operand_t. */
+/* Parse operand token.
+ * Returns ERROR_OK on success, or an error code on failure.
+ * Sets out_op to the parsed operand.
+ */
 static error_code_t parse_operand_token(const char *tok, operand_t *out_op) {
     int imm_status, imm_value, reg;
     int matrix_status, i, n;
@@ -155,7 +195,7 @@ static error_code_t parse_operand_token(const char *tok, operand_t *out_op) {
 
     /* immediate */
     imm_status = parse_immediate_token(tok, &imm_value);
-    if (imm_status == ERROR_INVALID_NUMBER_FORMAT) return ERROR_INVALID_NUMBER_FORMAT;
+    if (imm_status < 0) return ERROR_INVALID_NUMBER_FORMAT;
     if (imm_status == 1) {
         out_op->mode = IMMEDIATE;
         out_op->value.immediate_value = imm_value;
@@ -177,26 +217,29 @@ static error_code_t parse_operand_token(const char *tok, operand_t *out_op) {
     if (matrix_status == 1) return ERROR_OK;
 
     /* plain label */
-    if (!isalpha(tok[0])) return ERROR_INVALID_OPERAND_SYNTAX; {
-        n = (int) strlen(tok);
-        if (n >= MAX_LABEL_LENGTH) return ERROR_INVALID_LABEL;
-        for (i = 1; i < n; ++i)
-            if (!isalnum(tok[i])) return ERROR_ILLEGAL_LABEL;
-        memcpy(out_op->value.label, tok, n + 1);
-        out_op->value.label[n] = '\0';
-        out_op->mode = DIRECT;
-    }
+    if (!isalpha((unsigned char) tok[0])) return ERROR_INVALID_OPERAND_SYNTAX;
+    n = (int) strlen(tok);
+    if (n >= MAX_LABEL_LENGTH) return ERROR_INVALID_LABEL;
+    for (i = 1; i < n; ++i)
+        if (!isalnum((unsigned char) tok[i])) return ERROR_ILLEGAL_LABEL;
+    memcpy(out_op->value.label, tok, n + 1);
+    out_op->value.label[n] = '\0';
+    out_op->mode = DIRECT;
     return ERROR_OK;
 }
 
-/* ========= opcode/directive lookup ========= */
+/* -- opcode/directive lookup -- */
 
+/* Struct to describe an opcode with its mnemonic and required operand count. */
 typedef struct {
     const char *mnemonic;
     op_code_t opcode;
     int required_operands;
 } opcode_desc_t;
 
+/* List of all opcodes with their mnemonics and required operand counts.
+ * The last entry is a sentinel with mnemonic NULL to mark the end of the list.
+ */
 static const opcode_desc_t OPCODES[] = {
     {"mov", MOV_OP, 2}, {"cmp", CMP_OP, 2}, {"add", ADD_OP, 2}, {"sub", SUB_OP, 2},
     {"lea", LEA_OP, 2}, {"clr", CLR_OP, 1}, {"not", NOT_OP, 1}, {"inc", INC_OP, 1},
@@ -205,6 +248,10 @@ static const opcode_desc_t OPCODES[] = {
     {0, UNKNOWN_OP, 0}
 };
 
+/* Lookup opcode by mnemonic.
+ * Returns the corresponding op_code_t or UNKNOWN_OP if not found.
+ * Sets out_required to the number of operands required for this opcode.
+ */
 static op_code_t lookup_opcode_by_mnemonic(const char *tok, int *out_required) {
     int i;
     for (i = 0; OPCODES[i].mnemonic; ++i) {
@@ -216,6 +263,10 @@ static op_code_t lookup_opcode_by_mnemonic(const char *tok, int *out_required) {
     return UNKNOWN_OP;
 }
 
+/* Lookup directive by token.
+ * Returns the corresponding directive_t or -1 if not found.
+ * The returned value can be used to determine the type of directive.
+ */
 static directive_t lookup_directive_by_token(const char *tok) {
     if (strcmp(tok, ".data") == 0) return DATA_DIRECTIVE;
     if (strcmp(tok, ".string") == 0) return STRING_DIRECTIVE;
@@ -225,8 +276,13 @@ static directive_t lookup_directive_by_token(const char *tok) {
     return (directive_t) -1;
 }
 
-/* ========= directive parsers ========= */
+/* -- directive parsers -- */
 
+/* Parse the payload of a .data directive.
+ * Expects a comma-separated list of integers.
+ * Fills out_values with the parsed integers and sets count.
+ * Returns ERROR_OK on success, or an error code on failure.
+ */
 static error_code_t parse_data_directive_payload(char *payload, int_array_t *out_values) {
     char *cursor = payload, *field, *endptr;
     int val;
@@ -243,12 +299,16 @@ static error_code_t parse_data_directive_payload(char *payload, int_array_t *out
         if (*endptr != '\0') return ERROR_INVALID_NUMBER_FORMAT;
         if (out_values->count >= MAX_DATA_ITEMS) return ERROR_DATA_OVERFLOW; /* cap overflow */
         out_values->values[out_values->count++] = val;
-
         field = next_comma_separated_piece(&cursor); /* next field */
     }
     return ERROR_OK;
 }
 
+/* Parse the payload of a .string directive.
+ * Expects a string enclosed in double quotes.
+ * Fills dest with the parsed string and returns ERROR_OK on success.
+ * Returns an error code on failure.
+ */
 static error_code_t parse_string_directive_payload(char *payload, char dest[MAX_STRING_LEN]) {
     char *open_quote, *close_quote;
     int len;
@@ -261,7 +321,7 @@ static error_code_t parse_string_directive_payload(char *payload, char dest[MAX_
     close_quote = strrchr(open_quote + 1, '\"');
     if (!close_quote || close_quote <= open_quote + 1) return ERROR_INVALID_STRING_FORMAT;
 
-    len = (close_quote - (open_quote + 1)); /* length of the string inside quotes */
+    len = (int) (close_quote - (open_quote + 1)); /* length of the string inside quotes */
     if (len >= MAX_STRING_LEN) return ERROR_INVALID_STRING_FORMAT;
 
     memcpy(dest, open_quote + 1, len);
@@ -271,10 +331,14 @@ static error_code_t parse_string_directive_payload(char *payload, char dest[MAX_
     close_quote++;
     close_quote = skip_leading_whitespace(close_quote);
     if (*close_quote) return ERROR_TRAILING_CHARACTERS;
-
     return ERROR_OK;
 }
 
+/* Parse the payload of a .mat directive.
+ * Expects a matrix definition in the format [rows][cols][v1, v2, ...].
+ * Fills out_mat with the parsed matrix definition and returns ERROR_OK on success.
+ * Returns an error code on failure.
+ */
 static error_code_t parse_matrix_directive_payload(char *payload, matrix_def_t *out_mat) {
     char *content_start, *bracket_end;
     char *endptr;
@@ -302,6 +366,7 @@ static error_code_t parse_matrix_directive_payload(char *payload, matrix_def_t *
         *bracket_end = saved;
     }
 
+    /* Validate rows */
     error = extract_bracket_content(bracket_end, &content_start, &bracket_end);
     if (error != ERROR_OK) return error;
 
@@ -325,7 +390,7 @@ static error_code_t parse_matrix_directive_payload(char *payload, matrix_def_t *
     out_mat->rows = rows;
     out_mat->cols = cols;
 
-    /* after dims: either nothing (zero-fill) or a comma list of exactly 'need' ints */
+    /* after dims  either nothing or a comma list of ints */
     cursor = skip_leading_whitespace(bracket_end + 1);
     if (*cursor == '\0') {
         /* No values , zero-init cells */
@@ -333,7 +398,7 @@ static error_code_t parse_matrix_directive_payload(char *payload, matrix_def_t *
         return ERROR_OK;
     }
 
-    /* --- parse values: v1, v2, ..., v_need (no extra / no missing / no trailing comma) --- */
+    /* parse values: v1, v2, ... (no extra / no missing / no trailing comma) */
     {
         for (i = 0; i < need; ++i) {
             piece = next_comma_separated_piece(&cursor);
@@ -350,7 +415,6 @@ static error_code_t parse_matrix_directive_payload(char *payload, matrix_def_t *
             return ERROR_TRAILING_CHARACTERS; /* dangling comma */
         }
     }
-
     return ERROR_OK;
 }
 
@@ -387,8 +451,8 @@ error_code_t parse_line(char *line, parsed_line *out) {
     if (token[strlen(token) - 1] == ':') {
         label_len = (int) strlen(token) - 1; /* remove trailing ':' */
         if (label_len == 0 || label_len >= MAX_LABEL_LENGTH) return ERROR_INVALID_LABEL;
-        if (!isalpha(token[0])) return ERROR_ILLEGAL_LABEL;
-        for (i = 1; i < label_len; ++i) if (!isalnum(token[i])) return ERROR_ILLEGAL_LABEL;
+        if (!isalpha((unsigned char) token[0])) return ERROR_ILLEGAL_LABEL;
+        for (i = 1; i < label_len; ++i) if (!isalnum((unsigned char) token[i])) return ERROR_ILLEGAL_LABEL;
         memcpy(out->label, token, label_len);
         out->label[label_len] = '\0';
 
@@ -400,10 +464,10 @@ error_code_t parse_line(char *line, parsed_line *out) {
     if (token[0] == '.') {
         out->kind = LINE_DIRECTIVE;
         out->body.directive.type = lookup_directive_by_token(token);
-
         if ((int) out->body.directive.type < 0) return ERROR_INVALID_DIRECTIVE;
-        payload = skip_leading_whitespace(cursor);
 
+
+        payload = skip_leading_whitespace(cursor);
         switch (out->body.directive.type) {
             case DATA_DIRECTIVE:
                 return parse_data_directive_payload(payload, &out->body.directive.operands.data);
@@ -416,9 +480,9 @@ error_code_t parse_line(char *line, parsed_line *out) {
                 symbol = next_whitespace_delimited_token(&payload);
                 label_len = sizeof(out->body.directive.operands.symbol_name);
                 if (!symbol) return ERROR_INVALID_LABEL;
-                if (!isalpha(symbol[0])) return ERROR_ILLEGAL_LABEL;
+                if (!isalpha((unsigned char) symbol[0])) return ERROR_ILLEGAL_LABEL;
                 for (i = 1; symbol[i]; ++i)
-                    if (!isalnum(symbol[i])) return ERROR_ILLEGAL_LABEL;
+                    if (!isalnum((unsigned char) symbol[i])) return ERROR_ILLEGAL_LABEL;
                 if ((int) strlen(symbol) >= label_len) return ERROR_ILLEGAL_LABEL;
                 memcpy(out->body.directive.operands.symbol_name, symbol, strlen(symbol) + 1);
                 if (next_whitespace_delimited_token(&payload)) return ERROR_TRAILING_CHARACTERS;
@@ -450,11 +514,11 @@ error_code_t parse_line(char *line, parsed_line *out) {
     {
         list_cursor = operands_text;
         field = next_comma_separated_piece(&list_cursor);
-        if (!field || !*field) return ERROR_EXPECTED_OPERAND; {
-            error = parse_operand_token(field, &out->body.operation.source_op);
-            if (error != ERROR_OK) return error;
-            parsed = 1;
-        }
+        if (!field || !*field) return ERROR_EXPECTED_OPERAND;
+        error = parse_operand_token(field, &out->body.operation.source_op);
+        if (error != ERROR_OK) return error;
+        parsed = 1;
+
 
         field = next_comma_separated_piece(&list_cursor);
         if (field && *field) {
