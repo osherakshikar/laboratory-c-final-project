@@ -420,17 +420,16 @@ static error_code_t parse_matrix_directive_payload(char *payload, matrix_def_t *
 
 
 error_code_t parse_line(char *line, parsed_line *out) {
-    char working_copy[MAX_LINE_LENGTH];
-    char *cursor, *token, *operands_text, *payload;
-    char *symbol;
-    int label_len;
-    int i, required_operands;
+    char working_copy[MAX_LINE_LENGTH] = {0}; /* working copy of the line */
+    char *cursor, *token, *field;
+    int i, label_len, required_operands = 0;
 
-    char *list_cursor, *field;
-    int parsed = 0;
     error_code_t error;
 
     if (!line || !out) return ERROR_INVALID_OPERAND_SYNTAX;
+
+    /* length guard (keep 1 for NUL) */
+    if (strlen(line) >= (size_t) MAX_LINE_LENGTH) return ERROR_LINE_TOO_LONG;
 
     memset(out, 0, sizeof(*out));
     out->kind = LINE_EMPTY_OR_COMMENT;
@@ -443,7 +442,7 @@ error_code_t parse_line(char *line, parsed_line *out) {
     cursor = skip_leading_whitespace(working_copy);
     if (!*cursor) return ERROR_OK; /* empty line or comment */
 
-    /* first token: label or directive/opcode */
+    /* first token: maybe label */
     token = next_whitespace_delimited_token(&cursor);
     if (!token) return ERROR_OK;
 
@@ -467,25 +466,25 @@ error_code_t parse_line(char *line, parsed_line *out) {
         if ((int) out->body.directive.type < 0) return ERROR_INVALID_DIRECTIVE;
 
 
-        payload = skip_leading_whitespace(cursor);
+        skip_leading_whitespace(cursor);
         switch (out->body.directive.type) {
             case DATA_DIRECTIVE:
-                return parse_data_directive_payload(payload, &out->body.directive.operands.data);
+                return parse_data_directive_payload(cursor, &out->body.directive.operands.data);
             case STRING_DIRECTIVE:
-                return parse_string_directive_payload(payload, out->body.directive.operands.string_val);
+                return parse_string_directive_payload(cursor, out->body.directive.operands.string_val);
             case MATRIX_DIRECTIVE:
-                return parse_matrix_directive_payload(payload, &out->body.directive.operands.mat);
+                return parse_matrix_directive_payload(cursor, &out->body.directive.operands.mat);
             case ENTRY_DIRECTIVE:
             case EXTERN_DIRECTIVE: {
-                symbol = next_whitespace_delimited_token(&payload);
+                token = next_whitespace_delimited_token(&cursor);
                 label_len = sizeof(out->body.directive.operands.symbol_name);
-                if (!symbol) return ERROR_INVALID_LABEL;
-                if (!isalpha((unsigned char) symbol[0])) return ERROR_ILLEGAL_LABEL;
-                for (i = 1; symbol[i]; ++i)
-                    if (!isalnum((unsigned char) symbol[i])) return ERROR_ILLEGAL_LABEL;
-                if ((int) strlen(symbol) >= label_len) return ERROR_ILLEGAL_LABEL;
-                memcpy(out->body.directive.operands.symbol_name, symbol, strlen(symbol) + 1);
-                if (next_whitespace_delimited_token(&payload)) return ERROR_TRAILING_CHARACTERS;
+                if (!token) return ERROR_INVALID_LABEL;
+                if (!isalpha((unsigned char) token[0])) return ERROR_ILLEGAL_LABEL;
+                for (i = 1; token[i]; ++i)
+                    if (!isalnum((unsigned char) token[i])) return ERROR_ILLEGAL_LABEL;
+                if ((int) strlen(token) >= label_len) return ERROR_ILLEGAL_LABEL;
+                memcpy(out->body.directive.operands.symbol_name, token, strlen(token) + 1);
+                if (next_whitespace_delimited_token(&cursor)) return ERROR_TRAILING_CHARACTERS;
                 return ERROR_OK;
             }
             default: break;
@@ -497,44 +496,45 @@ error_code_t parse_line(char *line, parsed_line *out) {
     out->body.operation.opcode = lookup_opcode_by_mnemonic(token, &required_operands);
     if (out->body.operation.opcode == UNKNOWN_OP) return ERROR_UNKNOWN_COMMAND_NAME;
 
-    operands_text = skip_leading_whitespace(cursor);
+    cursor = skip_leading_whitespace(cursor);
 
     if (required_operands == 0) {
-        if (*operands_text) return ERROR_INVALID_OPERAND_COUNT_FOR_COMMAND;
+        if (*cursor) return ERROR_INVALID_OPERAND_COUNT_FOR_COMMAND;
         return ERROR_OK;
     }
 
-    if (!*operands_text) return ERROR_EXPECTED_OPERAND;
+    if (!*cursor) return ERROR_EXPECTED_OPERAND;
 
     /* quick extra commas check */
-    if (operands_text[0] == ',' || operands_text[strlen(operands_text) - 1] == ',') return ERROR_TRAILING_CHARACTERS;
-    if (strstr(operands_text, ",,")) return ERROR_TRAILING_CHARACTERS;
+    if (cursor[0] == ',' || cursor[strlen(cursor) - 1] == ',') return ERROR_TRAILING_CHARACTERS;
+    if (strstr(cursor, ",,")) return ERROR_TRAILING_CHARACTERS;
+    if (required_operands == 2 && strchr(cursor, ',') == NULL)
+        return ERROR_MISSING_COMMA_BETWEEN_OPERANDS;
 
     /* parse up to 2 comma-separated operands */
-    {
-        list_cursor = operands_text;
-        field = next_comma_separated_piece(&list_cursor);
-        if (!field || !*field) return ERROR_EXPECTED_OPERAND;
-        error = parse_operand_token(field, &out->body.operation.source_op);
+    /* operand #1 */
+    field = next_comma_separated_piece(&cursor);
+    if (!field || !*field) return ERROR_EXPECTED_OPERAND;
+    error = parse_operand_token(field, &out->body.operation.source_op);
+    if (error != ERROR_OK) return error;
+
+    /* operand #2 (optional) */
+    field = next_comma_separated_piece(&cursor);
+    if (field && *field) {
+        error = parse_operand_token(field, &out->body.operation.dest_op);
         if (error != ERROR_OK) return error;
-        parsed = 1;
 
-
-        field = next_comma_separated_piece(&list_cursor);
-        if (field && *field) {
-            error = parse_operand_token(field, &out->body.operation.dest_op);
-            if (error != ERROR_OK) return error;
-            parsed = 2;
-
-            /* ensure no third operand */
-            if (next_comma_separated_piece(&list_cursor)) return ERROR_TOO_MANY_OPERANDS;
-        } else if (field && !*field) {
-            return ERROR_TRAILING_CHARACTERS;
-        }
-
-        if (parsed != required_operands) return ERROR_INVALID_OPERAND_COUNT_FOR_COMMAND;
-        out->body.operation.n_operands = parsed;
+        /* ensure no third operand */
+        if (next_comma_separated_piece(&cursor)) return ERROR_TOO_MANY_OPERANDS;
+        out->body.operation.n_operands = 2;
+    } else if (field && !*field) {
+        return ERROR_TRAILING_CHARACTERS;
+    } else {
+        out->body.operation.n_operands = 1;
     }
+
+    if (out->body.operation.n_operands != required_operands)
+        return ERROR_INVALID_OPERAND_COUNT_FOR_COMMAND;
 
     return ERROR_OK;
 }
