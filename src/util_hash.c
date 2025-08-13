@@ -207,3 +207,30 @@ size_t hash_size(const hash_table_t *ht) {
     }
     return ht->size;
 }
+
+hash_entry_t *hash_get_next(hash_table_t *ht, const hash_entry_t *current) {
+    size_t index = 0;
+
+    if (!ht) {
+        return NULL;
+    }
+
+    if (current) {
+        /* if there's a next entry in the current chain, return it */
+        if (current->next) {
+            return current->next;
+        }
+        /* otherwise, find the next bucket to start searching from */
+        index = (djb2(current->key) & (ht->capacity - 1)) + 1;
+    }
+
+    /* find the next non-empty bucket and return its first entry */
+    for (; index < ht->capacity; index++) {
+        if (ht->tbl[index]) {
+            return ht->tbl[index];
+        }
+    }
+
+    /* no more entries found */
+    return NULL;
+}

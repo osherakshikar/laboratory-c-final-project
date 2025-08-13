@@ -48,42 +48,42 @@ hash_table_t *hash_create(size_t pow2_cap);
  * Destroys the hash table and frees all allocated memory.
  * If destroy_val is not NULL, it will be called for each value in the hash table.
  *
- * @param hash_table Pointer to the hash table to destroy
+ * @param ht Pointer to the hash table to destroy
  * @param destroy_val Function pointer to a function that destroys the value, can be NULL
  */
-void hash_destroy(hash_table_t *, void (*destroy_val)(void *));
+void hash_destroy(hash_table_t *ht, void (*destroy_val)(void *));
 
 /**
  * Puts a key-value pair into the hash table.
  * If the key already exists, it updates the value.
  * Old value is not freed, caller is responsible.
  *
- * @param hash_table Pointer to the hash table
+ * @param ht Pointer to the hash table
  * @param key The key to insert or update
  * @param value The value associated with the key
  * @return 0 on success, -1 on failure
  */
-int hash_put(hash_table_t *, const char *, void *);
+int hash_put(hash_table_t *ht, const char *key, void *value);
 
 /**
  * Gets the value associated with a key in the hash table.
  *
- * @param hash_table Pointer to the hash table
+ * @param ht Pointer to the hash table
  * @param key The key to look up
  * @return Pointer to the value associated with the key, or NULL if not found
  */
-void *hash_get(const hash_table_t *, const char *);
+void *hash_get(const hash_table_t *ht, const char *key);
 
 /**
  * Removes a key-value pair from the hash table.
  * If destroy_val is not NULL, it will be called for the value before removing it.
  *
- * @param hash_table Pointer to the hash table
+ * @param ht Pointer to the hash table
  * @param key The key to remove
  * @param destroy_val Function pointer to a function that destroys the value, can be NULL
  * @return 0 on success, -1 on failure
  */
-int hash_remove(hash_table_t *, const char *, void (*destroy_val)(void *));
+int hash_remove(hash_table_t *ht, const char *key, void (*destroy_val)(void *));
 
 /**
  * Computes the size of the hash table.
@@ -92,4 +92,16 @@ int hash_remove(hash_table_t *, const char *, void (*destroy_val)(void *));
  * @return The number of entries in the hash table
  */
 size_t hash_size(const hash_table_t *ht);
+
+/**
+ * Gets the next entry in the hash table after the current entry.
+ * If current is NULL, it returns the first entry in the table.
+ * If there are no more entries, it returns NULL.
+ *
+ * @param ht Pointer to the hash table
+ * @param current Pointer to the current hash entry, or NULL to start from the beginning
+ * @return Pointer to the next hash entry, or NULL if no more entries
+ */
+hash_entry_t *hash_get_next(hash_table_t *ht, const hash_entry_t *current);
+
 #endif
