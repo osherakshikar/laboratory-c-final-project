@@ -2,9 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../include/macro.h"
-#include "../include/util_hash.h"
-#include "../include/util_vec.h"
-#include "../include/globals.h"
 
 /*
  * =====================================================================================
