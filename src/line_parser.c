@@ -22,7 +22,7 @@
 /* Remove comment from semicolon to end of line (if exists).
  * Modifies the line in place.
  */
-static void remove_comment_from_semicolon(char *line) {
+static void remove_comment_from_semicolon(const char *line) {
     char *semicolon = strchr(line, ';');
     if (semicolon) *semicolon = '\0';
 }
@@ -46,75 +46,58 @@ static void trim_trailing_whitespace_inplace(char *p) {
 
 /* -- identifier & small utilities -- */
 
-/* Return next whitespace delimited token; advances *cursor to next char.
- * If no token found, returns NULL and cursor points to end of string.
- * The token is null-terminated in place, so the caller can modify it.
+/* Retrieves the next token from a string, advancing a cursor.
+ * The token is delimited by any character in the `delimiters` string.
+ * Leading whitespace is skipped, and trailing whitespace is trimmed from the token.
+ * return A pointer to the null-terminated token, or NULL if no token is found.
  */
-static char *next_whitespace_delimited_token(char **cursor) {
-    char *scan = *cursor; /* scan points to the current position in the string */
-    char *whitespace_pos; /* position of the next whitespace character */
+static char *next_token(char **cursor, const char *delimiters) {
+    char *token_start;
+    char *token_end;
 
-    scan = skip_leading_whitespace(scan);
-    if (!*scan) {
-        *cursor = scan;
+    token_start = skip_leading_whitespace(*cursor);
+    if (!*token_start) {
+        *cursor = token_start;
         return NULL;
     }
 
-    whitespace_pos = strpbrk(scan, " \t\n\r");
-    if (whitespace_pos) {
-        *whitespace_pos = '\0';
-        *cursor = whitespace_pos + 1;
+    token_end = strpbrk(token_start, delimiters);
+    if (token_end) {
+        *token_end = '\0';
+        *cursor = token_end + 1;
     } else {
-        *cursor = scan + strlen(scan);
+        *cursor = token_start + strlen(token_start);
     }
-    return scan;
+
+    trim_trailing_whitespace_inplace(token_start);
+    return token_start;
 }
 
-/* Return next comm separated piece (trimmed) advances *cursor to next char.
- * If no piece found, returns NULL and cursor points to end of string
- * The piece is null terminated in place, so the caller can modify it.
+/* Validates if a string is a legal label.
+ * A legal label starts with a letter and is followed by letters or digits .
  */
-static char *next_comma_separated_piece(char **cursor) {
-    char *start, *comma;
-    if (!*cursor) return NULL;
+static bool_t is_valid_label(const char *label) {
+    int i, len;
 
-    start = skip_leading_whitespace(*cursor);
-    if (!*start) {
-        *cursor = start;
-        return NULL;
+    len = (int) strlen(label);
+    if (len == 0 || len >= MAX_LABEL_LENGTH || !isalpha((unsigned char) label[0])) {
+        return FALSE;
     }
-
-    comma = strchr(start, ',');
-    if (comma) {
-        *comma = '\0';
-        trim_trailing_whitespace_inplace(start);
-        *cursor = comma + 1;
-    } else {
-        trim_trailing_whitespace_inplace(start);
-        *cursor = start + strlen(start);
+    for (i = 1; i < len; ++i) {
+        if (!isalnum((unsigned char) label[i])) {
+            return FALSE;
+        }
     }
-    return start;
+    return TRUE;
 }
 
-/* Extract content between brackets [ ].
- * Returns ERROR_OK on success, or an error code on failure.
- * Sets content_start to the start of the content and bracket_end to the end of the closing bracket.
- */
-static error_code_t extract_bracket_content(const char *start, char **content_start, char **bracket_end) {
-    char *open_bracket, *close_bracket;
-
-    open_bracket = strchr(start, '[');
-    if (!open_bracket) return ERROR_INVALID_ADDRESSING_MODE;
-
-    close_bracket = strchr(open_bracket + 1, ']');
-    if (!close_bracket) return ERROR_INVALID_ADDRESSING_MODE;
-
-    /* Check if content is non-empty */
-    if (close_bracket == open_bracket + 1)
-        return ERROR_INVALID_MATRIX_DIMENSIONS;
-
-    *content_start = open_bracket + 1;
-    *bracket_end = close_bracket;
+/* Parses a string into an integer, ensuring no trailing characters exist. */
+static error_code_t parse_integer(const char *s, int *out_val) {
+    char *endptr;
+    *out_val = (int) strtol(s, &endptr, 10);
+    if (*endptr != '\0' || endptr == s) {
+        return ERROR_INVALID_NUMBER_FORMAT;
+    }
     return ERROR_OK;
 }
 
@@ -122,7 +105,6 @@ static error_code_t extract_bracket_content(const char *start, char **content_st
 
 /* Parse register token (r0..r7 or r8..r9). Returns 0..7 for r0..r7, -2 for r8/r9, -1 if not register. */
 static int parse_register_token(const char *tok) {
-    if (!tok) return -1;
     if (tok[0] == 'r' && tok[1] >= '0' && tok[1] <= '7' && tok[2] == '\0') return tok[1] - '0';
     if (tok[0] == 'r' && isdigit((unsigned char) tok[1]) && tok[2] == '\0') return -2;
     return -1;
@@ -132,13 +114,10 @@ static int parse_register_token(const char *tok) {
  * Sets out_value to the parsed integer value.
  */
 static int parse_immediate_token(const char *tok, int *out_value) {
-    char *endptr;
-    int val;
-    if (!tok || tok[0] != '#') return 0;
-    val = (int) strtol(tok + 1, &endptr, 10);
-    if (*endptr != '\0') return -ERROR_INVALID_NUMBER_FORMAT;
-    *out_value = val;
-    return 1;
+    error_code_t err;
+    if (tok[0] != '#') return 0;
+    err = parse_integer(tok + 1, out_value);
+    return (err == ERROR_OK) ? 1 : -((int) err);
 }
 
 /* Parse matrix access token [base_label][rX][rY].
@@ -146,36 +125,43 @@ static int parse_immediate_token(const char *tok, int *out_value) {
  * Sets out_op to the parsed operand with mode MATRIX_ACCESS.
  */
 static int parse_matrix_access_token(const char *tok, operand_t *out_op) {
-    char *content_start, *bracket_end;
-    error_code_t error;
-    int base_len;
+    const char *first_open, *first_close, *second_open, *second_close;
+    char buf[MAX_LABEL_LENGTH];
+    long len;
     int row_reg, col_reg;
 
-    error = extract_bracket_content(tok, &content_start, &bracket_end);
-    if (error == ERROR_INVALID_ADDRESSING_MODE) return 0;
-    if (error != ERROR_OK) return -(int) error; /* error code from extract_bracket */
-    if (bracket_end - content_start != 2) return -ERROR_INVALID_REGISTER;
+    first_open = strchr(tok, '[');
+    if (!first_open || first_open == tok) return 0; /* no '[' or starts with it (no label) */
 
+    first_close = strchr(first_open, ']');
+    if (!first_close) return 0; /* treat as direct label if no ']' found */
 
-    /* copy base label */
-    base_len = (int) (content_start - tok - 1);
-    if (base_len == 0 || base_len >= MAX_LABEL_LENGTH) return -ERROR_INVALID_LABEL;
-    memcpy(out_op->value.label, tok, base_len);
-    out_op->value.label[base_len] = '\0';
+    second_open = strchr(first_close, '[');
+    if (!second_open || second_open != first_close + 1) return 0; /* second '[' must be right after ']' */
 
-    if (content_start[0] != 'r' || !isdigit((unsigned char) content_start[1]) || content_start[2] != ']')
-        return -ERROR_INVALID_OPERAND_SYNTAX; /* must be [rX][rY] */
-    row_reg = content_start[1] - '0';
+    second_close = strchr(second_open, ']');
+    if (!second_close || *(second_close + 1) != '\0') return 0; /* must end with ']' and have no trailing chars */
 
-    error = extract_bracket_content(bracket_end, &content_start, &bracket_end);
-    if (error != ERROR_OK) return -(int) error; /* error code from extract_bracket */
-    if (bracket_end - content_start != 2) return -ERROR_INVALID_REGISTER;
+    /* validate and copy base label */
+    len = (long) (first_open - tok);
+    strncpy(buf, tok, len);
+    buf[len] = '\0';
+    if (!is_valid_label(buf)) return -ERROR_ILLEGAL_LABEL;
+    strcpy(out_op->value.label, buf);
 
-    if (content_start[0] != 'r' || !isdigit((unsigned char) content_start[1]) || content_start[2] != ']')
-        return -ERROR_INVALID_REGISTER; /* must be [rX][rY] */
-    col_reg = content_start[1] - '0';
+    /* parse first register */
+    len = (long) (first_close - (first_open + 1));
+    if (len <= 0 || len >= (int) sizeof(buf)) return -ERROR_INVALID_REGISTER;
+    strncpy(buf, first_open + 1, len);
+    buf[len] = '\0';
+    if ((row_reg = parse_register_token(buf)) < 0) return -ERROR_INVALID_REGISTER;
 
-    if (row_reg < 0 || row_reg > 7 || col_reg < 0 || col_reg > 7) return -ERROR_INVALID_REGISTER;
+    /* parse second register */
+    len = (long) (second_close - (second_open + 1));
+    if (len <= 0 || len >= (int) sizeof(buf)) return -ERROR_INVALID_REGISTER;
+    strncpy(buf, second_open + 1, len);
+    buf[len] = '\0';
+    if ((col_reg = parse_register_token(buf)) < 0) return -ERROR_INVALID_REGISTER;
 
     out_op->mode = MATRIX_ACCESS;
     out_op->row_reg = row_reg;
@@ -183,26 +169,22 @@ static int parse_matrix_access_token(const char *tok, operand_t *out_op) {
     return 1;
 }
 
-/* Parse operand token.
- * Returns ERROR_OK on success, or an error code on failure.
- * Sets out_op to the parsed operand.
- */
-static error_code_t parse_operand_token(const char *tok, operand_t *out_op) {
-    int imm_status, imm_value, reg;
-    int matrix_status, i, n;
+/* parses a single operand token into an operand_t struct */
+static error_code_t parse_operand(const char *tok, operand_t *out_op) {
+    int status, value, reg;
 
-    out_op->mode = DIRECT; /* default */
+    if (!tok || !*tok) return ERROR_EXPECTED_OPERAND;
 
-    /* immediate */
-    imm_status = parse_immediate_token(tok, &imm_value);
-    if (imm_status < 0) return ERROR_INVALID_NUMBER_FORMAT;
-    if (imm_status == 1) {
+    /* try parsing as immediate: #number */
+    status = parse_immediate_token(tok, &value);
+    if (status < 0) return (error_code_t) (-status);
+    if (status == 1) {
         out_op->mode = IMMEDIATE;
-        out_op->value.immediate_value = imm_value;
+        out_op->value.immediate_value = value;
         return ERROR_OK;
     }
 
-    /* register */
+    /* try parsing as register: r0-r7 */
     reg = parse_register_token(tok);
     if (reg >= 0) {
         out_op->mode = REGISTER_DIRECT;
@@ -211,20 +193,15 @@ static error_code_t parse_operand_token(const char *tok, operand_t *out_op) {
     }
     if (reg == -2) return ERROR_INVALID_REGISTER;
 
-    /* matrix access */
-    matrix_status = parse_matrix_access_token(tok, out_op);
-    if (matrix_status < 0) return (error_code_t) (-matrix_status);
-    if (matrix_status == 1) return ERROR_OK;
+    /* try parsing as matrix access: LABEL[rX][rY] */
+    status = parse_matrix_access_token(tok, out_op);
+    if (status < 0) return (error_code_t) (-status);
+    if (status == 1) return ERROR_OK;
 
-    /* plain label */
-    if (!isalpha((unsigned char) tok[0])) return ERROR_INVALID_OPERAND_SYNTAX;
-    n = (int) strlen(tok);
-    if (n >= MAX_LABEL_LENGTH) return ERROR_INVALID_LABEL;
-    for (i = 1; i < n; ++i)
-        if (!isalnum((unsigned char) tok[i])) return ERROR_ILLEGAL_LABEL;
-    memcpy(out_op->value.label, tok, n + 1);
-    out_op->value.label[n] = '\0';
+    /* Fallback to direct label */
+    if (!is_valid_label(tok)) return ERROR_ILLEGAL_LABEL;
     out_op->mode = DIRECT;
+    strcpy(out_op->value.label, tok);
     return ERROR_OK;
 }
 
@@ -260,6 +237,7 @@ static op_code_t lookup_opcode_by_mnemonic(const char *tok, int *out_required) {
             return OPCODES[i].opcode;
         }
     }
+    *out_required = 0;
     return UNKNOWN_OP;
 }
 
@@ -284,22 +262,21 @@ static directive_t lookup_directive_by_token(const char *tok) {
  * Returns ERROR_OK on success, or an error code on failure.
  */
 static error_code_t parse_data_directive_payload(char *payload, int_array_t *out_values) {
-    char *cursor = payload, *field, *endptr;
+    char *token;
     int val;
+    error_code_t err;
+
     out_values->count = 0;
 
-    if (!payload) return ERROR_EXPECTED_OPERAND;
+    if (!payload || !*payload) return ERROR_EXPECTED_OPERAND;
 
-    field = next_comma_separated_piece(&cursor); /* first field */
-    if (!field || !*field) return ERROR_EXPECTED_OPERAND;
+    while ((token = next_token(&payload, ",")) != NULL) {
+        if (!*token) return ERROR_TRAILING_CHARACTERS; /* handles cases like "1, ,2" or "1," */
+        if (out_values->count >= MAX_DATA_ITEMS) return ERROR_DATA_OVERFLOW;
 
-    while (field) {
-        if (!*field) return ERROR_INVALID_DATA_NAME;
-        val = (int) strtol(field, &endptr, 10);
-        if (*endptr != '\0') return ERROR_INVALID_NUMBER_FORMAT;
-        if (out_values->count >= MAX_DATA_ITEMS) return ERROR_DATA_OVERFLOW; /* cap overflow */
+        err = parse_integer(token, &val);
+        if (err != ERROR_OK) return err;
         out_values->values[out_values->count++] = val;
-        field = next_comma_separated_piece(&cursor); /* next field */
     }
     return ERROR_OK;
 }
@@ -310,27 +287,51 @@ static error_code_t parse_data_directive_payload(char *payload, int_array_t *out
  * Returns an error code on failure.
  */
 static error_code_t parse_string_directive_payload(char *payload, char dest[MAX_STRING_LEN]) {
-    char *open_quote, *close_quote;
-    int len;
+    char *start, *end;
+    size_t len;
 
-    if (!payload) return ERROR_INVALID_STRING_FORMAT;
-    payload = skip_leading_whitespace(payload);
+    start = skip_leading_whitespace(payload);
+    if (*start != '"') return ERROR_INVALID_STRING_FORMAT;
 
-    open_quote = strchr(payload, '\"');
-    if (!open_quote) return ERROR_INVALID_STRING_FORMAT;
-    close_quote = strrchr(open_quote + 1, '\"');
-    if (!close_quote || close_quote <= open_quote + 1) return ERROR_INVALID_STRING_FORMAT;
+    end = strrchr(start + 1, '"');
+    if (!end) return ERROR_INVALID_STRING_FORMAT;
 
-    len = (int) (close_quote - (open_quote + 1)); /* length of the string inside quotes */
-    if (len >= MAX_STRING_LEN) return ERROR_INVALID_STRING_FORMAT;
+    len = end - (start + 1);
+    if (len >= MAX_STRING_LEN) return ERROR_STRING_TOO_LONG;
 
-    memcpy(dest, open_quote + 1, len);
+    strncpy(dest, start + 1, len);
     dest[len] = '\0';
 
-    /* reject trailing garbage */
-    close_quote++;
-    close_quote = skip_leading_whitespace(close_quote);
-    if (*close_quote) return ERROR_TRAILING_CHARACTERS;
+    /* check for trailing non-whitespace characters */
+    if (*skip_leading_whitespace(end + 1) != '\0') return ERROR_TRAILING_CHARACTERS;
+
+    return ERROR_OK;
+}
+
+/* Extracts an integer from a bracketed expression [value].
+ * Advances the cursor to the position after the closing bracket.
+ * Returns ERROR_OK on success, or an error code on failure.
+ */
+static error_code_t extract_bracketed_integer(char **cursor, int *out_val) {
+    char *start;
+    char *open_bracket, *close_bracket, *content;
+    error_code_t err;
+
+    start = *cursor;
+    open_bracket = strchr(start, '[');
+    if (!open_bracket) return ERROR_INVALID_MATRIX_DIMENSIONS;
+
+    close_bracket = strchr(open_bracket + 1, ']');
+    if (!close_bracket) return ERROR_INVALID_MATRIX_DIMENSIONS;
+
+    *close_bracket = '\0'; /* temporarily terminate to parse content */
+    content = open_bracket + 1;
+    err = parse_integer(content, out_val);
+    *close_bracket = ']'; /* restore original char */
+
+    if (err != ERROR_OK) return err;
+
+    *cursor = close_bracket + 1;
     return ERROR_OK;
 }
 
@@ -340,123 +341,137 @@ static error_code_t parse_string_directive_payload(char *payload, char dest[MAX_
  * Returns an error code on failure.
  */
 static error_code_t parse_matrix_directive_payload(char *payload, matrix_def_t *out_mat) {
-    char *content_start, *bracket_end;
-    char *endptr;
-    error_code_t error;
-    int rows, cols, need, i, val;
-    char saved;
-    char *cursor, *piece;
+    int i, val, total_cells;
+    error_code_t err;
+    char *cursor, *token;
 
-    if (!payload) return ERROR_INVALID_MATRIX_DIMENSIONS;
-    payload = skip_leading_whitespace(payload);
+    cursor = payload;
 
-    /* Parse rows dimension */
-    error = extract_bracket_content(payload, &content_start, &bracket_end);
-    if (error != ERROR_OK) return error;
+    /* parse [rows] and [cols] */
+    if ((err = extract_bracketed_integer(&cursor, &out_mat->rows)) != ERROR_OK) return err;
+    if ((err = extract_bracketed_integer(&cursor, &out_mat->cols)) != ERROR_OK) return err;
 
-    /* rows inside first [ ] */
-    {
-        saved = *bracket_end;
-        *bracket_end = '\0';
-        rows = (int) strtol(content_start, &endptr, 10);
-        if (*endptr != '\0') {
-            *bracket_end = saved;
-            return ERROR_INVALID_NUMBER_FORMAT;
-        }
-        *bracket_end = saved;
+    if (out_mat->rows <= 0 || out_mat->rows > MAX_MATRIX_ROWS ||
+        out_mat->cols <= 0 || out_mat->cols > MAX_MATRIX_COLS) {
+        return ERROR_INVALID_MATRIX_DIMENSIONS;
     }
 
-    /* Validate rows */
-    error = extract_bracket_content(bracket_end, &content_start, &bracket_end);
-    if (error != ERROR_OK) return error;
+    total_cells = out_mat->rows * out_mat->cols;
+    cursor = skip_leading_whitespace(cursor);
 
-    /* cols inside second [ ] */
-    {
-        saved = *bracket_end;
-        *bracket_end = '\0';
-        cols = (int) strtol(content_start, &endptr, 10);
-        if (*endptr != '\0') {
-            *bracket_end = saved;
-            return ERROR_INVALID_NUMBER_FORMAT;
-        }
-        *bracket_end = saved;
-    }
-
-    /* validate dims/range */
-    if (rows <= 0 || rows > MAX_MATRIX_ROWS) return ERROR_INVALID_MATRIX_DIMENSIONS;
-    if (cols <= 0 || cols > MAX_MATRIX_COLS) return ERROR_INVALID_MATRIX_DIMENSIONS;
-
-    need = rows * cols;
-    out_mat->rows = rows;
-    out_mat->cols = cols;
-
-    /* after dims  either nothing or a comma list of ints */
-    cursor = skip_leading_whitespace(bracket_end + 1);
+    /* if no initializers, zero-fill the matrix */
     if (*cursor == '\0') {
-        /* No values , zero-init cells */
-        out_mat->cells[0] = 0;
+        for (i = 0; i < total_cells; ++i) out_mat->cells[i] = 0;
         return ERROR_OK;
     }
 
-    /* parse values: v1, v2, ... (no extra / no missing / no trailing comma) */
-    {
-        for (i = 0; i < need; ++i) {
-            piece = next_comma_separated_piece(&cursor);
-            if (!piece || !*piece) return ERROR_INVALID_MATRIX_INITIALIZATION; /* missing/empty */
-            val = strtol(piece, &endptr, 10);
-            if (*endptr != '\0') return ERROR_INVALID_NUMBER_FORMAT;
-            out_mat->cells[i] = val;
-        }
+    /* parse cell initializers */
+    for (i = 0; i < total_cells; ++i) {
+        token = next_token(&cursor, ",");
+        if (!token || !*token) return ERROR_INVALID_MATRIX_INITIALIZATION;
 
-        /* ensure no extra numbers and no trailing comma */
-        piece = next_comma_separated_piece(&cursor);
-        if (piece) {
-            if (*piece) return ERROR_INVALID_MATRIX_INITIALIZATION; /* extra value */
-            return ERROR_TRAILING_CHARACTERS; /* dangling comma */
-        }
+        if ((err = parse_integer(token, &val)) != ERROR_OK) return err;
+        out_mat->cells[i] = val;
+    }
+
+    /* check for extra initializers or trailing comma */
+    if (next_token(&cursor, ",")) return ERROR_INVALID_MATRIX_INITIALIZATION;
+
+    return ERROR_OK;
+}
+
+/* Validates the addressing modes of operands for a given instruction.
+ * ERROR_OK if the modes are valid, otherwise ERROR_INVALID_ADDRESSING_MODE.
+ */
+static error_code_t validate_addressing_modes(const parsed_line *p) {
+    op_code_t opcode = p->body.operation.opcode;
+
+    /* for single-operand instructions, the operand is in source_op. */
+    const operand_t *single_op = &p->body.operation.source_op;
+
+    switch (opcode) {
+        /* two Operand Instructions */
+        case MOV_OP:
+        case CMP_OP:
+        case ADD_OP:
+        case SUB_OP:
+            /* source Can be any of the 4 modes. No check needed. */
+            /* destination Cannot be immediate */
+            if (p->body.operation.dest_op.mode == IMMEDIATE)
+                return ERROR_INVALID_ADDRESSING_MODE;
+            break;
+
+        case LEA_OP:
+            /* source must be DIRECT or MATRIX_ACCESS */
+            if (p->body.operation.source_op.mode != DIRECT && p->body.operation.source_op.mode != MATRIX_ACCESS)
+                return ERROR_INVALID_ADDRESSING_MODE;
+            /* destination cannot be immediate */
+            if (p->body.operation.dest_op.mode == IMMEDIATE) /* destination Cannot be immediate */
+                return ERROR_INVALID_ADDRESSING_MODE;
+            break;
+
+        /* single operand instructions */
+        case CLR_OP:
+        case NOT_OP:
+        case INC_OP:
+        case DEC_OP:
+        case JMP_OP:
+        case BNE_OP:
+        case JSR_OP:
+        case RED_OP:
+            /* operand is treated as a destination and cannot be immediate */
+            if (single_op->mode == IMMEDIATE) return ERROR_INVALID_ADDRESSING_MODE;
+            break;
+
+        /* operand can be anything, no validation needed. */
+        case PRN_OP:
+        case RTS_OP:
+        case STOP_OP:
+            break;
+
+        default:
+            return ERROR_INVALID_ADDRESSING_MODE;
     }
     return ERROR_OK;
 }
 
-
 error_code_t parse_line(char *line, parsed_line *out) {
     char working_copy[MAX_LINE_LENGTH] = {0}; /* working copy of the line */
-    char *cursor, *token, *field;
-    int i, label_len, required_operands = 0;
-
+    char *cursor, *token;
+    int  required_operands = 0;
+    int token_len;
     error_code_t error;
 
-    if (!line || !out) return ERROR_INVALID_OPERAND_SYNTAX;
-
-    /* length guard (keep 1 for NUL) */
-    if (strlen(line) >= (size_t) MAX_LINE_LENGTH) return ERROR_LINE_TOO_LONG;
+    if (!line || !out) return ERROR_INVALID_ARGUMENT;
+    if (strlen(line) >= MAX_LINE_LENGTH) return ERROR_LINE_TOO_LONG;
 
     memset(out, 0, sizeof(*out));
-    out->kind = LINE_EMPTY_OR_COMMENT;
-
     strncpy(working_copy, line, sizeof(working_copy) - 1);
     working_copy[sizeof(working_copy) - 1] = '\0';
+
 
     remove_comment_from_semicolon(working_copy);
     trim_trailing_whitespace_inplace(working_copy);
     cursor = skip_leading_whitespace(working_copy);
+    out->kind = LINE_EMPTY_OR_COMMENT;
+
     if (!*cursor) return ERROR_OK; /* empty line or comment */
 
     /* first token: maybe label */
-    token = next_whitespace_delimited_token(&cursor);
-    if (!token) return ERROR_OK;
+    token = next_token(&cursor, " \t\n\r");
+    token_len = (int) strlen(token);
 
     /* optional label */
-    if (token[strlen(token) - 1] == ':') {
-        label_len = (int) strlen(token) - 1; /* remove trailing ':' */
-        if (label_len == 0 || label_len >= MAX_LABEL_LENGTH) return ERROR_INVALID_LABEL;
-        if (!isalpha((unsigned char) token[0])) return ERROR_ILLEGAL_LABEL;
-        for (i = 1; i < label_len; ++i) if (!isalnum((unsigned char) token[i])) return ERROR_ILLEGAL_LABEL;
-        memcpy(out->label, token, label_len);
-        out->label[label_len] = '\0';
+    if (token[token_len - 1] == ':' && token_len > 0) {
+        token[token_len - 1] = '\0'; /* remove the colon */
+        if (!is_valid_label(token)) return ERROR_ILLEGAL_LABEL;
+        strcpy(out->label, token);
+        token = next_token(&cursor, " \t\n\r"); /* get next token (command) */
+    }
 
-        token = next_whitespace_delimited_token(&cursor);
-        if (!token) return ERROR_INVALID_OPERAND_SYNTAX; /* label with no body */
+    if (!token) {
+        /* label only line */
+        return out->label[0] ? ERROR_INVALID_OPERAND_SYNTAX : ERROR_OK;
     }
 
     /* directive check */
@@ -465,8 +480,6 @@ error_code_t parse_line(char *line, parsed_line *out) {
         out->body.directive.type = lookup_directive_by_token(token);
         if ((int) out->body.directive.type < 0) return ERROR_INVALID_DIRECTIVE;
 
-
-        skip_leading_whitespace(cursor);
         switch (out->body.directive.type) {
             case DATA_DIRECTIVE:
                 return parse_data_directive_payload(cursor, &out->body.directive.operands.data);
@@ -476,65 +489,46 @@ error_code_t parse_line(char *line, parsed_line *out) {
                 return parse_matrix_directive_payload(cursor, &out->body.directive.operands.mat);
             case ENTRY_DIRECTIVE:
             case EXTERN_DIRECTIVE: {
-                token = next_whitespace_delimited_token(&cursor);
-                label_len = sizeof(out->body.directive.operands.symbol_name);
-                if (!token) return ERROR_INVALID_LABEL;
-                if (!isalpha((unsigned char) token[0])) return ERROR_ILLEGAL_LABEL;
-                for (i = 1; token[i]; ++i)
-                    if (!isalnum((unsigned char) token[i])) return ERROR_ILLEGAL_LABEL;
-                if ((int) strlen(token) >= label_len) return ERROR_ILLEGAL_LABEL;
-                memcpy(out->body.directive.operands.symbol_name, token, strlen(token) + 1);
-                if (next_whitespace_delimited_token(&cursor)) return ERROR_TRAILING_CHARACTERS;
+                token = next_token(&cursor, " \t\n\r");
+                if (!token || !is_valid_label(token)) return ERROR_INVALID_LABEL;
+                strcpy(out->body.directive.operands.symbol_name, token);
+                if (next_token(&cursor, " \t\n\r")) return ERROR_TRAILING_CHARACTERS;
                 return ERROR_OK;
             }
-            default: break;
         }
     }
 
-    /* instruction */
+    /* must be instruction */
     out->kind = LINE_OPERATION;
     out->body.operation.opcode = lookup_opcode_by_mnemonic(token, &required_operands);
     if (out->body.operation.opcode == UNKNOWN_OP) return ERROR_UNKNOWN_COMMAND_NAME;
+    out->body.operation.n_operands = 0;
 
-    cursor = skip_leading_whitespace(cursor);
-
-    if (required_operands == 0) {
-        if (*cursor) return ERROR_INVALID_OPERAND_COUNT_FOR_COMMAND;
-        return ERROR_OK;
-    }
-
-    if (!*cursor) return ERROR_EXPECTED_OPERAND;
-
-    /* quick extra commas check */
-    if (cursor[0] == ',' || cursor[strlen(cursor) - 1] == ',') return ERROR_TRAILING_CHARACTERS;
-    if (strstr(cursor, ",,")) return ERROR_TRAILING_CHARACTERS;
-    if (required_operands == 2 && strchr(cursor, ',') == NULL)
-        return ERROR_MISSING_COMMA_BETWEEN_OPERANDS;
-
-    /* parse up to 2 comma-separated operands */
-    /* operand #1 */
-    field = next_comma_separated_piece(&cursor);
-    if (!field || !*field) return ERROR_EXPECTED_OPERAND;
-    error = parse_operand_token(field, &out->body.operation.source_op);
-    if (error != ERROR_OK) return error;
-
-    /* operand #2 (optional) */
-    field = next_comma_separated_piece(&cursor);
-    if (field && *field) {
-        error = parse_operand_token(field, &out->body.operation.dest_op);
-        if (error != ERROR_OK) return error;
-
-        /* ensure no third operand */
-        if (next_comma_separated_piece(&cursor)) return ERROR_TOO_MANY_OPERANDS;
-        out->body.operation.n_operands = 2;
-    } else if (field && !*field) {
-        return ERROR_TRAILING_CHARACTERS;
-    } else {
+    if (required_operands > 0) {
+        token = next_token(&cursor, ",");
+        if ((error = parse_operand(token, &out->body.operation.source_op)) != ERROR_OK) return error;
         out->body.operation.n_operands = 1;
     }
 
-    if (out->body.operation.n_operands != required_operands)
+    if (required_operands > 1) {
+        token = next_token(&cursor, ",");
+        if ((error = parse_operand(token, &out->body.operation.dest_op)) != ERROR_OK) return error;
+        out->body.operation.n_operands = 2;
+    }
+
+    /* check for extraneous characters/operands */
+    if (*skip_leading_whitespace(cursor) != '\0') {
+        return (required_operands == 2 && strchr(cursor, ',')) ? ERROR_TOO_MANY_OPERANDS : ERROR_TRAILING_CHARACTERS;
+    }
+
+    if (out->body.operation.n_operands != required_operands) {
         return ERROR_INVALID_OPERAND_COUNT_FOR_COMMAND;
+    }
+
+    /* validate operand addressing modes for the parsed instruction */
+    if ((error = validate_addressing_modes(out)) != ERROR_OK) {
+        return error;
+    }
 
     return ERROR_OK;
 }
