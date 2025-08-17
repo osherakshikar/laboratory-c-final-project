@@ -1,6 +1,14 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
-
+/*
+ * =====================================================================================
+ * Filename: globals.h
+ * Description: Global definitions and utility functions for the assembler project.
+ * This header file defines constants, types, and utility functions used throughout the project.
+ * It includes definitions for boolean types, maximum sizes for various data structures,
+ * and utility functions for string manipulation and file path creation.
+ * =====================================================================================
+ */
 /**
  * @enum bool_t
  * @brief Boolean type definition for true/false values.
