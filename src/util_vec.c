@@ -49,26 +49,32 @@ int vec_push(vec_t *v, const void *elem) {
        Cast to char* to perform byte-level pointer arithmetic */
     dest = (char *) v->data + (v->len * v->elem_sz);
 
-    /* Copy the element's bytes into the vector's data buffer */
+    /* Copy the element to the vector */
     memcpy(dest, elem, v->elem_sz);
     v->len++;
 
     return 0;
 }
 
-void *vec_get(const vec_t *v, const size_t idx) {
+void *vec_get(const vec_t *v, size_t idx) {
+    char *base;
+
     if (!v || idx >= v->len) {
         return NULL;
     }
-    return (char *) v->data + (idx * v->elem_sz); /* Return pointer to the element */
+
+    base = (char *) v->data;
+    return base + (idx * v->elem_sz);
 }
 
 void vec_destroy(vec_t *v) {
-    if (v && v->data) {
+    if (!v) return;
+    
+    if (v->data) {
         free(v->data);
         v->data = NULL;
-        v->len = 0;
-        v->cap = 0;
-        v->elem_sz = 0;
     }
+    v->len = 0;
+    v->cap = 0;
+    v->elem_sz = 0;
 }

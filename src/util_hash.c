@@ -58,10 +58,7 @@ hash_table_t *hash_create(size_t pow2_cap) {
     hash_table_t *ht;
 
     ht = malloc(sizeof(hash_table_t));
-    if (!ht) {
-        printf("Error: Could not allocate memory for hash table\n");
-        return NULL;
-    }
+    if (!ht) return NULL;
 
     if (pow2_cap < 4) pow2_cap = INITIAL_CAPACITY;
     if ((pow2_cap & (pow2_cap - 1)) != 0) /* Not power of 2 */
@@ -70,11 +67,10 @@ hash_table_t *hash_create(size_t pow2_cap) {
     ht->capacity = pow2_cap;
     ht->size = 0;
 
-    /* Allocate an array of pointers, and initialize all to NULL */
+    /* allocate an array of pointers, and initialize all to NULL */
     ht->tbl = calloc(ht->capacity, sizeof(hash_entry_t *));
     if (!ht->tbl) {
         free(ht);
-        printf("Error: Could not allocate memory for hash table entries\n");
         return NULL;
     }
     return ht;
@@ -86,13 +82,13 @@ void hash_destroy(hash_table_t *ht, void (*destroy_val)(void *)) {
 
     if (!ht) return;
 
-    /* Free all entries in the hash table */
+    /* free all entries in the hash table */
     for (i = 0; i < ht->capacity; i++) {
         entry = ht->tbl[i];
         while (entry) {
             next = entry->next;
             free(entry->key);
-            if (destroy_val) destroy_val(entry->value); /* Call the user-defined function to destroy the value */
+            if (destroy_val) destroy_val(entry->value); /* call the user-defined function to destroy the value */
             free(entry);
             entry = next;
         }
@@ -106,40 +102,34 @@ int hash_put(hash_table_t *ht, const char *key, void *value) {
     unsigned long hash;
     hash_entry_t *entry, *new_entry;
 
-    if (!ht || !key) {
-        printf("Error: Invalid hash table or key\n");
-        return -1;
-    }
+    if (!ht || !key) return -1;
 
     hash = djb2(key);
     index = hash & (ht->capacity - 1);
 
-    entry = ht->tbl[index]; /* Get head of the chain */
-    /* Check if the key already exists in the chain */
+    entry = ht->tbl[index]; /* get head of the chain */
+    /* check if the key already exists in the chain */
     while (entry) {
         if (strcmp(entry->key, key) == 0) {
-            /* Key already exists, update value */
+            /* key already exists, update value */
             entry->value = value;
             return 0;
         }
         entry = entry->next;
     }
 
-    /* If key not found, crate new entry and add it to head of list */
+    /* ff key not found crate new entry and add it to head of list */
     new_entry = malloc(sizeof(hash_entry_t));
-    if (!new_entry) {
-        printf("Error: Could not allocate memory for new hash entry\n");
-        return -1;
-    }
+    if (!new_entry) return -1;
+
     new_entry->key = dupstr(key);
     if (!new_entry->key) {
-        printf("Error: Could not allocate memory for new hash entry key\n");
         free(new_entry);
         return -1;
     }
     new_entry->value = value;
-    new_entry->next = ht->tbl[index]; /* Point to the current head of the chain */
-    ht->tbl[index] = new_entry; /* Insert at the head of the chain */
+    new_entry->next = ht->tbl[index]; /* point to the current head of the chain */
+    ht->tbl[index] = new_entry; /* insert at the head of the chain */
     ht->size++;
 
     return 0;
@@ -150,19 +140,20 @@ void *hash_get(const hash_table_t *ht, const char *key) {
     size_t index, mask;
     hash_entry_t *entry;
 
+    if (!ht || !key) return NULL;
+
     hash = djb2(key);
     mask = ht->capacity - 1;
     index = hash & mask;
 
-    if (!ht->tbl || !ht->tbl[index]) {
-        return NULL; /* Hash table is empty or key not found */
-    }
+    if (!ht->tbl || !ht->tbl[index]) return NULL; /* hash table is empty or key not found */
+
     for (entry = ht->tbl[index]; entry; entry = entry->next) {
         if (strcmp(entry->key, key) == 0) {
-            return entry->value; /* Key found, return value */
+            return entry->value; /* key found return value */
         }
     }
-    return NULL; /* Key not found */
+    return NULL; /* key not found */
 }
 
 int hash_remove(hash_table_t *ht, const char *key, void (*destroy_val)(void *)) {
@@ -170,67 +161,58 @@ int hash_remove(hash_table_t *ht, const char *key, void (*destroy_val)(void *)) 
     size_t index, mask;
     hash_entry_t *entry, *prev = NULL;
 
-    if (!ht || !key) {
-        printf("Error: Invalid hash table or key\n");
-        return -1;
-    }
+    if (!ht || !key) return -1;
+
 
     hash = djb2(key);
     mask = ht->capacity - 1;
     index = hash & mask;
 
-    entry = ht->tbl[index]; /* Get head of the chain */
+    entry = ht->tbl[index]; /* get head of the chain */
     while (entry) {
         if (strcmp(entry->key, key) == 0) {
-            /* Key found, remove it */
+            /* key found remove it */
             if (prev) {
-                prev->next = entry->next; /* Bypass the entry to remove it */
+                prev->next = entry->next; /* bypass the entry to remove it */
             } else {
-                ht->tbl[index] = entry->next; /* Remove from head of the chain */
+                ht->tbl[index] = entry->next; /* remove from head of the chain */
             }
             free(entry->key);
-            if (destroy_val) destroy_val(entry->value); /* Call the user defined function to destroy the value */
+            if (destroy_val) destroy_val(entry->value); /* call the user defined function to destroy the value */
             free(entry);
             ht->size--;
-            return 0; /* Success */
+            return 0; /* success */
         }
         prev = entry;
         entry = entry->next;
     }
-    return -1; /* Key not found */
+    return -1; /* key not found */
 }
 
 size_t hash_size(const hash_table_t *ht) {
-    if (!ht) {
-        printf("Error: Invalid hash table\n");
-        return 0;
-    }
+    if (!ht) return 0;
     return ht->size;
 }
 
 hash_entry_t *hash_get_next(hash_table_t *ht, const hash_entry_t *current) {
     size_t index = 0;
 
-    if (!ht) {
-        return NULL;
-    }
+    if (!ht || ht->size == 0) return NULL;
 
     if (current) {
-        /* if there's a next entry in the current chain, return it */
+        /* if there's a next entry in the current chain return it */
         if (current->next) {
             return current->next;
         }
-        /* otherwise, find the next bucket to start searching from */
+        /* otherwise find the next bucket to start searching from */
         index = (djb2(current->key) & (ht->capacity - 1)) + 1;
     }
-
-    /* find the next non-empty bucket and return its first entry */
+    /* find the next nonempty bucket and return its first entry */
     for (; index < ht->capacity; index++) {
         if (ht->tbl[index]) {
             return ht->tbl[index];
         }
     }
-
     /* no more entries found */
     return NULL;
 }

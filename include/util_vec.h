@@ -29,7 +29,14 @@ typedef struct {
  * @param v Pointer to the vector structure to initialize
  * @param elem_size Size of each element in bytes
  */
-void vec_create(vec_t *v, const size_t elem_size);
+void vec_create(vec_t *v, size_t elem_size);
+
+/**
+ * Destroys a vector and frees all allocated memory.
+ *
+ * @param v Pointer to the vector structure to destroy
+ */
+void vec_destroy(vec_t *v);
 
 /**
  * Adds an element to the vector. If the vector is full, it will resize it.
@@ -47,12 +54,6 @@ int vec_push(vec_t *v, const void *elem);
  * @param idx Index of the element to retrieve
  * @return Pointer to the element, or NULL if index is out of bounds
  */
-void *vec_get(const vec_t *v, const size_t idx);
+void *vec_get(const vec_t *v, size_t idx);
 
-/**
- * Destroys the vector and frees its allocated memory.
- *
- * @param v Pointer to the vector structure to destroy
- */
-void vec_destroy(vec_t *v);
 #endif
