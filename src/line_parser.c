@@ -14,7 +14,6 @@
  * =====================================================================================
  */
 
-
 /* --- Private Helper Functions --- */
 
 /* -- whitespace & comment helpers -- */
@@ -22,7 +21,7 @@
 /* Remove comment from semicolon to end of line (if exists).
  * Modifies the line in place.
  */
-static void remove_comment_from_semicolon(const char *line) {
+static void remove_comment_from_semicolon(char *line) {
     char *semicolon = strchr(line, ';');
     if (semicolon) *semicolon = '\0';
 }
@@ -88,6 +87,9 @@ static bool_t is_valid_label(const char *label) {
             return FALSE;
         }
     }
+    if (is_reserved_keyword(label)) {
+        return FALSE; /* label cannot be a reserved keyword */
+    }
     return TRUE;
 }
 
@@ -110,95 +112,73 @@ static int parse_register_token(const char *tok) {
     return -1;
 }
 
-/* Parse immediate token . Returns 1 on success, 0 if not immediate, negative on error.
- * Sets out_value to the parsed integer value.
- */
-static int parse_immediate_token(const char *tok, int *out_value) {
-    error_code_t err;
-    if (tok[0] != '#') return 0;
-    err = parse_integer(tok + 1, out_value);
-    return (err == ERROR_OK) ? 1 : -((int) err);
-}
 
-/* Parse matrix access token [base_label][rX][rY].
- * Returns 1 on success, native on error, 0 if not a matrix access.
- * Sets out_op to the parsed operand with mode MATRIX_ACCESS.
- */
-static int parse_matrix_access_token(const char *tok, operand_t *out_op) {
-    const char *first_open, *first_close, *second_open, *second_close;
-    char buf[MAX_LABEL_LENGTH];
-    long len;
-    int row_reg, col_reg;
-
-    first_open = strchr(tok, '[');
-    if (!first_open || first_open == tok) return 0; /* no '[' or starts with it (no label) */
-
-    first_close = strchr(first_open, ']');
-    if (!first_close) return 0; /* treat as direct label if no ']' found */
-
-    second_open = strchr(first_close, '[');
-    if (!second_open || second_open != first_close + 1) return 0; /* second '[' must be right after ']' */
-
-    second_close = strchr(second_open, ']');
-    if (!second_close || *(second_close + 1) != '\0') return 0; /* must end with ']' and have no trailing chars */
-
-    /* validate and copy base label */
-    len = (long) (first_open - tok);
-    strncpy(buf, tok, len);
-    buf[len] = '\0';
-    if (!is_valid_label(buf)) return -ERROR_ILLEGAL_LABEL;
-    strcpy(out_op->value.label, buf);
-
-    /* parse first register */
-    len = (long) (first_close - (first_open + 1));
-    if (len <= 0 || len >= (int) sizeof(buf)) return -ERROR_INVALID_REGISTER;
-    strncpy(buf, first_open + 1, len);
-    buf[len] = '\0';
-    if ((row_reg = parse_register_token(buf)) < 0) return -ERROR_INVALID_REGISTER;
-
-    /* parse second register */
-    len = (long) (second_close - (second_open + 1));
-    if (len <= 0 || len >= (int) sizeof(buf)) return -ERROR_INVALID_REGISTER;
-    strncpy(buf, second_open + 1, len);
-    buf[len] = '\0';
-    if ((col_reg = parse_register_token(buf)) < 0) return -ERROR_INVALID_REGISTER;
-
-    out_op->mode = MATRIX_ACCESS;
-    out_op->row_reg = row_reg;
-    out_op->col_reg = col_reg;
-    return 1;
-}
-
-/* parses a single operand token into an operand_t struct */
 static error_code_t parse_operand(const char *tok, operand_t *out_op) {
-    int status, value, reg;
+    int value, reg;
+    char *first_open, *first_close, *second_open, *second_close;
+    size_t label_len, reg_len;
+    char reg_buf[4];
 
     if (!tok || !*tok) return ERROR_EXPECTED_OPERAND;
 
-    /* try parsing as immediate: #number */
-    status = parse_immediate_token(tok, &value);
-    if (status < 0) return (error_code_t) (-status);
-    if (status == 1) {
+    /* Immediate: #number */
+    if (tok[0] == '#') {
+        if (parse_integer(tok + 1, &value) != ERROR_OK) return ERROR_INVALID_NUMBER_FORMAT;
         out_op->mode = IMMEDIATE;
         out_op->value.immediate_value = value;
         return ERROR_OK;
     }
 
-    /* try parsing as register: r0-r7 */
-    reg = parse_register_token(tok);
-    if (reg >= 0) {
+    /* Register: r0-r7 */
+    if (tok[0] == 'r' && tok[1] >= '0' && tok[1] <= '7' && tok[2] == '\0') {
         out_op->mode = REGISTER_DIRECT;
-        out_op->value.reg_num = reg;
+        out_op->value.reg_num = tok[1] - '0';
         return ERROR_OK;
     }
-    if (reg == -2) return ERROR_INVALID_REGISTER;
+    if (tok[0] == 'r' && isdigit((unsigned char)tok[1]) && tok[2] == '\0') return ERROR_INVALID_REGISTER;
 
-    /* try parsing as matrix access: LABEL[rX][rY] */
-    status = parse_matrix_access_token(tok, out_op);
-    if (status < 0) return (error_code_t) (-status);
-    if (status == 1) return ERROR_OK;
+    /* Matrix access: LABEL[rX][rY] */
+    first_open = strchr(tok, '[');
+    if (first_open) {
+        first_close = strchr(first_open, ']');
+        second_open = first_close ? strchr(first_close, '[') : NULL;
+        second_close = second_open ? strchr(second_open, ']') : NULL;
 
-    /* Fallback to direct label */
+        if (!first_close || !second_open || !second_close ||
+            second_open != first_close + 1 || second_close[1] != '\0') {
+            return ERROR_INVALID_MATRIX_FORMAT;
+        }
+
+        /* Extract and validate label */
+        label_len = (size_t)(first_open - tok);
+        if (label_len == 0 || label_len >= MAX_LABEL_LENGTH) return ERROR_ILLEGAL_LABEL;
+        strncpy(out_op->value.label, tok, label_len);
+        out_op->value.label[label_len] = '\0';
+        if (!is_valid_label(out_op->value.label)) return ERROR_ILLEGAL_LABEL;
+
+        /* Parse first register */
+        reg_len = (size_t)(first_close - first_open - 1);
+        if (reg_len == 0 || reg_len >= 4) return ERROR_INVALID_REGISTER;
+        strncpy(reg_buf, first_open + 1, reg_len);
+        reg_buf[reg_len] = '\0';
+        reg = parse_register_token(reg_buf);
+        if (reg < 0) return ERROR_INVALID_REGISTER;
+        out_op->row_reg = reg;
+
+        /* Parse second register */
+        reg_len = (size_t)(second_close - second_open - 1);
+        if (reg_len == 0 || reg_len >= 4) return ERROR_INVALID_REGISTER;
+        strncpy(reg_buf, second_open + 1, reg_len);
+        reg_buf[reg_len] = '\0';
+        reg = parse_register_token(reg_buf);
+        if (reg < 0) return ERROR_INVALID_REGISTER;
+        out_op->col_reg = reg;
+
+        out_op->mode = MATRIX_ACCESS;
+        return ERROR_OK;
+    }
+
+    /* Direct label */
     if (!is_valid_label(tok)) return ERROR_ILLEGAL_LABEL;
     out_op->mode = DIRECT;
     strcpy(out_op->value.label, tok);
@@ -395,8 +375,8 @@ static error_code_t validate_addressing_modes(const parsed_line *p) {
         case CMP_OP:
         case ADD_OP:
         case SUB_OP:
-            /* source Can be any of the 4 modes. No check needed. */
-            /* destination Cannot be immediate */
+            /* source Can be any of the 4 modes
+             destination Cannot be immediate */
             if (p->body.operation.dest_op.mode == IMMEDIATE)
                 return ERROR_INVALID_ADDRESSING_MODE;
             break;
@@ -435,13 +415,67 @@ static error_code_t validate_addressing_modes(const parsed_line *p) {
     return ERROR_OK;
 }
 
-error_code_t parse_line(char *line, parsed_line *out) {
-    char working_copy[MAX_LINE_LENGTH] = {0}; /* working copy of the line */
-    char *cursor, *token;
-    int  required_operands = 0;
-    int token_len;
+/* Parse directive operands based on the directive type.
+ * Expects a cursor pointing to the start of the operands.
+ * Fills out->body.directive.operands with the parsed data.
+ * Returns ERROR_OK on success, or an error code on failure.
+ */
+static error_code_t parse_directive_operand(char *cursor, parsed_line *out) {
+    char *token;
+
+    switch (out->body.directive.type) {
+        case DATA_DIRECTIVE:
+            return parse_data_directive_payload(cursor, &out->body.directive.operands.data);
+        case STRING_DIRECTIVE:
+            return parse_string_directive_payload(cursor, out->body.directive.operands.string_val);
+        case MATRIX_DIRECTIVE:
+            return parse_matrix_directive_payload(cursor, &out->body.directive.operands.mat);
+        case ENTRY_DIRECTIVE:
+        case EXTERN_DIRECTIVE:
+            token = next_token(&cursor, " \t\n\r");
+            if (!token || !is_valid_label(token)) return ERROR_INVALID_LABEL;
+            strcpy(out->body.directive.operands.symbol_name, token);
+            return next_token(&cursor, " \t\n\r") ? ERROR_TRAILING_CHARACTERS : ERROR_OK;
+        default:
+            return ERROR_INVALID_DIRECTIVE;
+    }
+}
+
+/* Parse instruction operands.
+ * Expects a cursor pointing to the start of the operands.
+ * Fills out->body.operation.source_op and out->body.operation.dest_op.
+ * Returns ERROR_OK on success, or an error code on failure.
+ */
+static error_code_t parse_instruction_operands(char *cursor, parsed_line *out, int required_operands) {
+    char *token;
     error_code_t error;
 
+    out->body.operation.n_operands = required_operands;
+
+    if (required_operands >= 1) {
+        token = next_token(&cursor, ",");
+        if (!token) return ERROR_EXPECTED_OPERAND;
+        error = parse_operand(token, &out->body.operation.source_op);
+        if (error != ERROR_OK) return error;
+    }
+
+    if (required_operands >= 2) {
+        token = next_token(&cursor, " \t\n\r");
+        if (!token) return ERROR_EXPECTED_OPERAND;
+        error = parse_operand(token, &out->body.operation.dest_op);
+        if (error != ERROR_OK) return error;
+    }
+
+    return next_token(&cursor, " \t\n\r") ? ERROR_TRAILING_CHARACTERS : ERROR_OK;
+}
+
+error_code_t parse_line(char *line, parsed_line *out) {
+    char working_copy[MAX_LINE_LENGTH];
+    char *cursor, *token;
+    int token_len, required_operands;
+    error_code_t error;
+
+    /* Input validation and setup */
     if (!line || !out) return ERROR_INVALID_ARGUMENT;
     if (strlen(line) >= MAX_LINE_LENGTH) return ERROR_LINE_TOO_LONG;
 
@@ -449,86 +483,44 @@ error_code_t parse_line(char *line, parsed_line *out) {
     strncpy(working_copy, line, sizeof(working_copy) - 1);
     working_copy[sizeof(working_copy) - 1] = '\0';
 
-
+    /* Preprocessing */
     remove_comment_from_semicolon(working_copy);
     trim_trailing_whitespace_inplace(working_copy);
     cursor = skip_leading_whitespace(working_copy);
-    out->kind = LINE_EMPTY_OR_COMMENT;
 
-    if (!*cursor) return ERROR_OK; /* empty line or comment */
+    if (!*cursor) {
+        out->kind = LINE_EMPTY_OR_COMMENT;
+        return ERROR_OK;
+    }
 
-    /* first token: maybe label */
+    /* Parse first token (potentially with label) */
     token = next_token(&cursor, " \t\n\r");
-    token_len = (int) strlen(token);
+    token_len = (int)strlen(token);
 
-    /* optional label */
-    if (token[token_len - 1] == ':' && token_len > 0) {
-        token[token_len - 1] = '\0'; /* remove the colon */
+    /* Handle label if present */
+    if (token_len > 0 && token[token_len - 1] == ':') {
+        token[token_len - 1] = '\0';
         if (!is_valid_label(token)) return ERROR_ILLEGAL_LABEL;
         strcpy(out->label, token);
-        token = next_token(&cursor, " \t\n\r"); /* get next token (command) */
+        token = next_token(&cursor, " \t\n\r");
+        if (!token) return out->label[0] ? ERROR_INVALID_OPERAND_SYNTAX : ERROR_OK;
     }
 
-    if (!token) {
-        /* label only line */
-        return out->label[0] ? ERROR_INVALID_OPERAND_SYNTAX : ERROR_OK;
-    }
-
-    /* directive check */
+    /* Parse directive */
     if (token[0] == '.') {
         out->kind = LINE_DIRECTIVE;
         out->body.directive.type = lookup_directive_by_token(token);
-        if ((int) out->body.directive.type < 0) return ERROR_INVALID_DIRECTIVE;
-
-        switch (out->body.directive.type) {
-            case DATA_DIRECTIVE:
-                return parse_data_directive_payload(cursor, &out->body.directive.operands.data);
-            case STRING_DIRECTIVE:
-                return parse_string_directive_payload(cursor, out->body.directive.operands.string_val);
-            case MATRIX_DIRECTIVE:
-                return parse_matrix_directive_payload(cursor, &out->body.directive.operands.mat);
-            case ENTRY_DIRECTIVE:
-            case EXTERN_DIRECTIVE: {
-                token = next_token(&cursor, " \t\n\r");
-                if (!token || !is_valid_label(token)) return ERROR_INVALID_LABEL;
-                strcpy(out->body.directive.operands.symbol_name, token);
-                if (next_token(&cursor, " \t\n\r")) return ERROR_TRAILING_CHARACTERS;
-                return ERROR_OK;
-            }
-        }
+        if ((int)out->body.directive.type < 0) return ERROR_INVALID_DIRECTIVE;
+        return parse_directive_operand(cursor, out);
     }
 
-    /* must be instruction */
+    /* Parse instruction */
     out->kind = LINE_OPERATION;
     out->body.operation.opcode = lookup_opcode_by_mnemonic(token, &required_operands);
     if (out->body.operation.opcode == UNKNOWN_OP) return ERROR_UNKNOWN_COMMAND_NAME;
-    out->body.operation.n_operands = 0;
 
-    if (required_operands > 0) {
-        token = next_token(&cursor, ",");
-        if ((error = parse_operand(token, &out->body.operation.source_op)) != ERROR_OK) return error;
-        out->body.operation.n_operands = 1;
-    }
+    error = parse_instruction_operands(cursor, out, required_operands);
+    if (error != ERROR_OK) return error;
 
-    if (required_operands > 1) {
-        token = next_token(&cursor, ",");
-        if ((error = parse_operand(token, &out->body.operation.dest_op)) != ERROR_OK) return error;
-        out->body.operation.n_operands = 2;
-    }
-
-    /* check for extraneous characters/operands */
-    if (*skip_leading_whitespace(cursor) != '\0') {
-        return (required_operands == 2 && strchr(cursor, ',')) ? ERROR_TOO_MANY_OPERANDS : ERROR_TRAILING_CHARACTERS;
-    }
-
-    if (out->body.operation.n_operands != required_operands) {
-        return ERROR_INVALID_OPERAND_COUNT_FOR_COMMAND;
-    }
-
-    /* validate operand addressing modes for the parsed instruction */
-    if ((error = validate_addressing_modes(out)) != ERROR_OK) {
-        return error;
-    }
-
-    return ERROR_OK;
+    return validate_addressing_modes(out);
 }
