@@ -3,9 +3,17 @@
 #include "../include/symbol_table.h"
 #include "../include/globals.h"
 
-/* Check if symbol flags conflict with existing flags.
- * Returns 1 if there is a conflict, 0 otherwise.
+
+/*
+ * =====================================================================================
+ * Filename:  symbol_table.c
+ * Description: Implementation of a symbol table for the assembler.
+ * This table stores symbols with their names, addresses, and flags.
+ * It allows insertion, lookup, and iteration over symbols.
+ * Conflicts are checked to ensure that symbols do not have incompatible flags.
+ * =====================================================================================
  */
+
 static int check_symbol_conflicts(int existing_flags, int new_flags) {
     if ((new_flags & (SYM_CODE | SYM_DATA)) && (existing_flags & (SYM_CODE | SYM_DATA))) return 1;
     if ((new_flags & (SYM_CODE | SYM_DATA)) && (existing_flags & SYM_EXTERN)) return 1;
@@ -24,13 +32,13 @@ int symtab_insert(symbol_table_t *st, const char *name, const int address, const
     if (s) {
         if (check_symbol_conflicts(s->flags, add_flags)) return 0;
 
-        /* Update existing symbol if it data/code */
+        /* update existing symbol if it data/code */
         if (add_flags & (SYM_CODE | SYM_DATA)) s->address = address;
         s->flags |= add_flags;
         return 1;
     }
 
-    /* Create new symbol */
+    /* create new symbol */
     s = (symbol_t *) malloc(sizeof(*s));
     if (!s) return 0;
 
@@ -51,7 +59,7 @@ symbol_table_t *symtab_create(void) {
 }
 
 void symtab_destroy(symbol_table_t *st) {
-    if (st) hash_destroy(st, free); /* Properly free symbol_t structures */
+    if (st) hash_destroy(st, free); /* properly free symbol_t structures */
 }
 
 symbol_t *symtab_lookup(symbol_table_t *st, const char *name) {
@@ -72,11 +80,12 @@ symbol_t *symtab_iter_next(symbol_table_t *st, hash_entry_t **iter) {
     if (!iter) return NULL;
 
     if (!*iter) {
-        /* Start iteration from beginning */
+        /* start iteration from beginning */
         *iter = st ? hash_get_next(st, NULL) : NULL;
     } else {
-        /* Continue iteration */
+        /* continue iteration */
         *iter = hash_get_next(st, *iter);
     }
     return *iter ? (symbol_t *) (*iter)->value : NULL;
 }
+
