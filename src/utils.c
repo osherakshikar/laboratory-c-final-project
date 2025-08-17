@@ -1,7 +1,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../include/globals.h"
-
+/*
+ * =====================================================================================
+ * Filename: utils.c
+ * Description: Utility functions for string manipulation and keyword checking.
+ * Includes functions to duplicate strings, check for reserved keywords, and create file
+ * paths with specific endings.
+ * =====================================================================================
+ */
 
 char *dupstr(const char *str) {
     char *dup = malloc(strlen(str) + 1);
