@@ -1,24 +1,33 @@
 #ifndef SYMBOL_TABLE_H
 #define SYMBOL_TABLE_H
-#include <stddef.h>
 #include "globals.h"
 #include "util_hash.h"
 
-/* Bit flags for symbols */
+/*
+ * =====================================================================================
+ * Filename:  symbol_table.h
+ * Description: Header file for the symbol table used in the assembler.
+ * This file defines the data structures and functions for managing symbols in the assembler.
+ * It includes the symbol_t structure, which represents a symbol with its name, address, and flags.
+ * The symbol table is implemented as a hash table for efficient symbol lookup and insertion.
+ * The file also defines functions for creating, destroying, and manipulating the symbol table.
+ * =====================================================================================
+ */
+
+/* bit flags for symbols */
 #define SYM_CODE   (1<<0) /* Code symbol: function or instruction 0x01 */
 #define SYM_DATA   (1<<1) /* Data symbol: variable or constant 0x02 */
 #define SYM_ENTRY  (1<<2) /* Entry point symbol: used in the second pass 0x04 */
 #define SYM_EXTERN (1<<3) /* External symbol: defined in another module 0x08 */
 
-/** Symbol table structure */
+/* struct to define symbol_t table */
 typedef struct symbol {
     char name[MAX_LABEL_LENGTH]; /* 30 chars + '\0' */
     int address; /* word address */
     int flags; /* SYM_* bitmask */
 } symbol_t;
 
-/** Symbol table type definition */
-typedef hash_table_t symbol_table_t;
+typedef hash_table_t symbol_table_t; /* symbol table is a hash table of symbol_t structures */
 
 /**
  * @brief Create a new symbol table.
@@ -53,19 +62,18 @@ symbol_t *symtab_lookup(symbol_table_t *st, const char *name);
  * @param name Name of the symbol (must be unique).
  * @param address Address of the symbol (for code/data symbols).
  * @param add_flags Flags for the symbol (SYM_CODE, SYM_DATA, SYM_ENTRY, SYM_EXTERN).
- * @return 1 on success, 0 on failure (duplicate label, conflict with existing flags).
- * - Cannot have both SYM_CODE and SYM_DATA flags.
- * - Cannot have SYM_EXTERN and SYM_CODE/SYM_DATA at the same time.
- * - Cannot have SYM_ENTRY and SYM_EXTERN at the same time.
- * - Cannot have multiple SYM_ENTRY flags for the same symbol.
- * - If the symbol already exists, it updates the address and flags.
+ * @return 1 on success, 0 on failure (duplicate label, conflict with existing flags)..
  */
 int symtab_insert(symbol_table_t *st, const char *name, const int address, const int add_flags);
 
 /**
- * Add final instruction counter (IC_final) to all data addresses.
- * This is used to rebase data symbols after the first pass.
- * The ic_final parameter is the final instruction counter value.
+ * @brief Bump the addresses of data symbols in the symbol table.
+ *
+ * this function adjusts the addresses of all data symbols
+ * by the final instruction count (ic_final) to account for the size of code.
+ *
+ * @param st Pointer to the symbol table.
+ * @param ic_final Final instruction count from the first pass.
  */
 void symtab_bump_data_addresses(symbol_table_t *st, int ic_final);
 
@@ -93,18 +101,4 @@ symbol_t *symtab_iter_next(symbol_table_t *st, hash_entry_t **iter);
  * @return 0 on success, -1 on failure
  */
 int first_pass(const char *input_path, symbol_table_t *symbol_table);
-
-/**
- * @brief Performs the second pass of the assembler
- *
- * Generates machine code, creates .ob file with base-4 encoded instructions,
- * creates .ent file for entry symbols, and creates .ext file for external symbols
- *
- * @param input_path Path to the preprocessed assembly file (.am)
- * @param output_base Base name for output files (without extension)
- * @param symbol_table Symbol table from first pass
- * @return 0 on success, -1 on failure
- */
-int second_pass(const char *input_path, const char *output_base, symbol_table_t *symbol_table);
-
-#endif /* SYMBOL_TABLE_H */
+#endif
