@@ -372,7 +372,6 @@ static error_code_t validate_addressing_modes(const parsed_line *p) {
     switch (opcode) {
         /* two Operand Instructions */
         case MOV_OP:
-        case CMP_OP:
         case ADD_OP:
         case SUB_OP:
             /* source Can be any of the 4 modes
@@ -404,6 +403,7 @@ static error_code_t validate_addressing_modes(const parsed_line *p) {
             break;
 
         /* operand can be anything, no validation needed. */
+        case CMP_OP:
         case PRN_OP:
         case RTS_OP:
         case STOP_OP:
