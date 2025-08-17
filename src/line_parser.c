@@ -121,7 +121,7 @@ static error_code_t parse_operand(const char *tok, operand_t *out_op) {
 
     if (!tok || !*tok) return ERROR_EXPECTED_OPERAND;
 
-    /* Immediate: #number */
+    /* immediate: #number */
     if (tok[0] == '#') {
         if (parse_integer(tok + 1, &value) != ERROR_OK) return ERROR_INVALID_NUMBER_FORMAT;
         out_op->mode = IMMEDIATE;
@@ -129,7 +129,7 @@ static error_code_t parse_operand(const char *tok, operand_t *out_op) {
         return ERROR_OK;
     }
 
-    /* Register: r0-r7 */
+    /* register: r0-r7 */
     if (tok[0] == 'r' && tok[1] >= '0' && tok[1] <= '7' && tok[2] == '\0') {
         out_op->mode = REGISTER_DIRECT;
         out_op->value.reg_num = tok[1] - '0';
@@ -137,7 +137,7 @@ static error_code_t parse_operand(const char *tok, operand_t *out_op) {
     }
     if (tok[0] == 'r' && isdigit((unsigned char)tok[1]) && tok[2] == '\0') return ERROR_INVALID_REGISTER;
 
-    /* Matrix access: LABEL[rX][rY] */
+    /* matrix access: label[rx][ry] */
     first_open = strchr(tok, '[');
     if (first_open) {
         first_close = strchr(first_open, ']');
@@ -149,14 +149,14 @@ static error_code_t parse_operand(const char *tok, operand_t *out_op) {
             return ERROR_INVALID_MATRIX_FORMAT;
         }
 
-        /* Extract and validate label */
+        /* extract and validate label */
         label_len = (size_t)(first_open - tok);
         if (label_len == 0 || label_len >= MAX_LABEL_LENGTH) return ERROR_ILLEGAL_LABEL;
         strncpy(out_op->value.label, tok, label_len);
         out_op->value.label[label_len] = '\0';
         if (!is_valid_label(out_op->value.label)) return ERROR_ILLEGAL_LABEL;
 
-        /* Parse first register */
+        /* parse first register */
         reg_len = (size_t)(first_close - first_open - 1);
         if (reg_len == 0 || reg_len >= 4) return ERROR_INVALID_REGISTER;
         strncpy(reg_buf, first_open + 1, reg_len);
@@ -165,7 +165,7 @@ static error_code_t parse_operand(const char *tok, operand_t *out_op) {
         if (reg < 0) return ERROR_INVALID_REGISTER;
         out_op->row_reg = reg;
 
-        /* Parse second register */
+        /* parse second register */
         reg_len = (size_t)(second_close - second_open - 1);
         if (reg_len == 0 || reg_len >= 4) return ERROR_INVALID_REGISTER;
         strncpy(reg_buf, second_open + 1, reg_len);
@@ -178,7 +178,7 @@ static error_code_t parse_operand(const char *tok, operand_t *out_op) {
         return ERROR_OK;
     }
 
-    /* Direct label */
+    /* direct label */
     if (!is_valid_label(tok)) return ERROR_ILLEGAL_LABEL;
     out_op->mode = DIRECT;
     strcpy(out_op->value.label, tok);
@@ -194,8 +194,8 @@ typedef struct {
     int required_operands;
 } opcode_desc_t;
 
-/* List of all opcodes with their mnemonics and required operand counts.
- * The last entry is a sentinel with mnemonic NULL to mark the end of the list.
+/* list of all opcodes with their mnemonics and required operand counts.
+ * the last entry is a sentinel with mnemonic null to mark the end of the list.
  */
 static const opcode_desc_t OPCODES[] = {
     {"mov", MOV_OP, 2}, {"cmp", CMP_OP, 2}, {"add", ADD_OP, 2}, {"sub", SUB_OP, 2},
