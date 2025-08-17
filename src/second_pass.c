@@ -230,12 +230,12 @@ static int write_ob_file(const char *base_name, const second_pass_ctx_t *ctx) {
     for (i = 0; i < ctx->code_pos; ++i) {
         word_to_base4(ADDRESS_BASE + i, b4_address, sizeof(b4_address));
         word_to_base4(ctx->code_image[i], b4_line, sizeof(b4_line));
-        fprintf(fp, "%s\t%s %d\n", b4_address, b4_line , ctx->code_image[i] );
+        fprintf(fp, "%s\t%s\n", b4_address, b4_line);
     }
     for (i = 0; i < ctx->data_pos; ++i) {
         word_to_base4(ctx->data_image[i], b4_line, sizeof(b4_line));
         word_to_base4(ADDRESS_BASE + i + ctx->code_pos , b4_address, sizeof(b4_address));
-        fprintf(fp, "%s\t%s %d\n", b4_address, b4_line, ctx->data_image[i]);
+        fprintf(fp, "%s\t%s\n", b4_address, b4_line);
     }
 
     fclose(fp);
