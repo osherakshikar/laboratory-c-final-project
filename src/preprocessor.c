@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../include/macro.h"
+#include "../include/globals.h"
+#include "../include/util_hash.h"
 
 /*
  * =====================================================================================
@@ -15,27 +17,6 @@
  */
 
 /* --- Private Helper Functions --- */
-
-/* Checks if a given name is a reserved keyword.
- * return TRUE if the name is reserved, FALSE otherwise.
- */
-static bool_t is_reserved_keyword(const char* name) {
-    int i;
-    const char* reserved_keywords[] = {
-        "mov", "cmp", "add", "sub", "not", "clr", "lea", "inc", "dec",
-        "jmp", "bne", "red", "prn", "jsr", "rts", "stop",
-        ".data", ".string", ".mat", ".entry", ".extern",
-        "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
-        "mcro", "mcrend",
-        NULL /* Sentinel to mark the end of the array */
-    };
-    for (i = 0; reserved_keywords[i] != NULL; i++) {
-        if (strcmp(reserved_keywords[i], name) == 0) {
-            return TRUE;
-        }
-    }
-    return FALSE;
-}
 
 /* Creates a new, empty macro object.
  * Returns a pointer to the newly created macro_t object, or NULL on failure.
@@ -67,7 +48,6 @@ static void destroy_macro(void* m) {
         char* macro_line = *(char**)vec_get(&macro->body, i);
         free(macro_line);
     }
-
     vec_destroy(&macro->body);
     free(macro);
 }
@@ -89,7 +69,7 @@ static int add_line_to_macro(macro_t* m, const char* line) {
     return 0;
 }
 
-/* --- Main Preprocessor Function --- */
+/* --- Public API preprocessor function --- */
 
 int preprocess_file(const char *input_path, const char *output_path) {
     FILE *as_file, *am_file;
@@ -107,7 +87,7 @@ int preprocess_file(const char *input_path, const char *output_path) {
     macro_t *macro_to_expand;
     size_t i;
 
-    macro_table = hash_create(0); /* Use default capacity */
+    macro_table = hash_create(0); /* use default capacity */
     if (!macro_table) {
         printf("Error: Failed to create macro table.\n");
         return -1;
@@ -128,7 +108,7 @@ int preprocess_file(const char *input_path, const char *output_path) {
         return -1;
     }
 
-    /* Read the input file line by line and process it.*/
+    /* read the input file line by line and process it.*/
     while (fgets(line, sizeof(line), as_file)) {
         line_num++;
         strcpy(line_copy, line); /* strtok modifies the string, so we use a copy */
@@ -143,7 +123,7 @@ int preprocess_file(const char *input_path, const char *output_path) {
             continue;
         }
 
-        /* Check for macro definition or end */
+        /* check for macro definition or end */
         if (strcmp(token, mcro) == 0) {
             in_macro_definition = TRUE;
 
@@ -179,16 +159,15 @@ int preprocess_file(const char *input_path, const char *output_path) {
             add_line_to_macro(current_macro, line);
 
         } else {
-            /* Not in a macro definition, check for macro call */
+            /* not in a macro definition, check for macro call */
             macro_to_expand = hash_get(macro_table, token);
             if (macro_to_expand) {
                 for (i = 0; i < macro_to_expand->body.len; i++) {
-                    char *macro_line = *(char **) vec_get(&macro_to_expand->body, i); /* Get the line from the macro body */
+                    char *macro_line = *(char **) vec_get(&macro_to_expand->body, i); /* get the line from the macro body */
                     fputs(macro_line, am_file);
                 }
-
             } else {
-                /* Regular line, write to output */
+                /* regular line, write to output */
                 fputs(line, am_file);
             }
         }
@@ -199,7 +178,7 @@ int preprocess_file(const char *input_path, const char *output_path) {
     hash_destroy(macro_table, destroy_macro);
 
     if (!success) {
-        remove(output_path); /* Delete the .am file if errors occurred */
+        remove(output_path); /* delete the .am file if errors occurred */
         return -1;
     }
 
