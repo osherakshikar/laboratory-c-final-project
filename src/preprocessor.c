@@ -4,6 +4,7 @@
 #include "../include/macro.h"
 #include "../include/globals.h"
 #include "../include/util_hash.h"
+#include "../include/errors.h"
 
 /*
  * =====================================================================================
@@ -75,7 +76,6 @@ int preprocess_file(const char *input_path, const char *output_path) {
     FILE *as_file, *am_file;
     char line[MAX_LINE_LENGTH];
     char line_copy[MAX_LINE_LENGTH];
-    int line_num = 0;
     bool_t success = TRUE;
 
     hash_table_t *macro_table;
@@ -89,20 +89,20 @@ int preprocess_file(const char *input_path, const char *output_path) {
 
     macro_table = hash_create(0); /* use default capacity */
     if (!macro_table) {
-        printf("Error: Failed to create macro table.\n");
+        print_error(ERROR_MEMORY_ALLOCATION_FAILED);
         return -1;
     }
 
     as_file = fopen(input_path, "r");
     if (!as_file) {
-        printf("Error: Cannot open input file '%s'\n", input_path);
+        print_error(ERROR_CANNOT_OPEN_FILE);
         hash_destroy(macro_table, destroy_macro);
         return -1;
     }
 
     am_file = fopen(output_path, "w");
     if (!am_file) {
-        fprintf(stderr, "Error: Cannot open output file '%s'\n", output_path);
+        print_error(ERROR_CANNOT_OPEN_FILE);
         fclose(as_file);
         hash_destroy(macro_table, destroy_macro);
         return -1;
@@ -110,7 +110,6 @@ int preprocess_file(const char *input_path, const char *output_path) {
 
     /* read the input file line by line and process it.*/
     while (fgets(line, sizeof(line), as_file)) {
-        line_num++;
         strcpy(line_copy, line); /* strtok modifies the string, so we use a copy */
 
         token = strtok(line_copy, " \t\n\r");
@@ -129,17 +128,17 @@ int preprocess_file(const char *input_path, const char *output_path) {
 
             macro_name = strtok(NULL, " \t\n\r");
             if (!macro_name) {
-                printf("Error line %d: Missing macro name after 'mcro'.\n", line_num);
+                print_error(ERROR_INVALID_MACRO_NAME);
                 success = FALSE;
                 continue;
             }
             if (is_reserved_keyword(macro_name)) {
-                printf("Error line %d: Macro name '%s' is a reserved keyword.\n", line_num, macro_name);
+                print_error(ERROR_RESERVED_MACRO_NAME);
                 success = FALSE;
                 continue;
             }
             if (strtok(NULL, " \t\n\r") != NULL) {
-                printf("Error line %d: Token found after macro definition.\n", line_num);
+                print_error(ERROR_TOKEN_AFTER_MACRO);
                 success = FALSE;
                 continue;
             }
@@ -149,7 +148,7 @@ int preprocess_file(const char *input_path, const char *output_path) {
 
         } else if (strcmp(token, mcrend) == 0) {
             if (strtok(NULL, " \t\n\r") != NULL) {
-                printf("Error line %d: Token found after 'mcrend'.\n", line_num);
+                print_error(ERROR_TOKEN_AFTER_MACRO);
                 success = FALSE;
             }
             in_macro_definition = FALSE;
