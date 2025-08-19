@@ -25,7 +25,7 @@ typedef enum {
 #define MAX_MATRIX_CELLS (MAX_MATRIX_ROWS * MAX_MATRIX_COLS)
 #define MAX_LINE_LENGTH 82 /* 80 chars + newline / terminator */
 #define MAX_LABEL_LENGTH  31  /* 30 chars + terminator */
-#define IMAGE_LENGTH 4096 /* max image size in words */
+#define IMAGE_LENGTH 256 /* max image size in words */
 #define MAX_STRING_LEN (MAX_LINE_LENGTH -2) /* fits any single input line */
 
 
