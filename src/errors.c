@@ -1,8 +1,19 @@
 #include "../include/errors.h"
 #include <stdio.h>
 
+/*
+ * =====================================================================================
+ * Filename: errors.c
+ * Description: Implements a centralized error handling system for the assembler.
+ * It provides functions to print error messages based on error codes.
+ * Each error code corresponds to a specific error condition, and the messages
+ * are designed to help the user understand what went wrong.
+ * =====================================================================================
+ */
 
-/* Local helper: map code -> constant string (no global arrays). */
+/* * Returns a string describing the error corresponding to the given error code.
+ * If the code is not recognized, it returns "unknown error code".
+ */
 static const char *error_message(const int code) {
     switch (code) {
         /* success */
