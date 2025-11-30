@@ -33,7 +33,7 @@ To compile the project, you can use the provided `Makefile`.
 
 ```bash
 make
-````
+```
 
 *This will compile the source code and generate an executable named `assembler`.*
 
